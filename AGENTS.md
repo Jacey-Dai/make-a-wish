@@ -20,7 +20,7 @@ Instructions for any coding agent (Claude, Cursor, Codex, Copilot, …) working 
 
 - Branch name: `feat/F<id>-<short-english-name>`, e.g. `feat/F3-falling-leaves`.
 - Put new code in its own commented section, tagged with the feature ID: `/* ---------- F3 leaves ---------- */`.
-- Follow the "技术约定" section of the PRD: CSS-pixel coordinates, the pond ellipse `pond {cx, cy, rx, ry}`, scale everything by `S`, use `inWater()`/`clampWater()`, Pointer Events only, `store.get/set` for localStorage (keys are prefixed `wishpond.`), all audio through `sfx` and only after a user gesture.
+- Follow the "技术约定" section of the PRD: CSS-pixel coordinates, the pond ellipse `pond {cx, cy, rx, ry}`, scale everything by `S`, use `inWater()`/`clampWater()`, Pointer Events only, `store.get/set` for localStorage (keys are prefixed `wishpond.`). There is no audio right now; do not add sound outside F6.
 - Keep the per-frame draw order in `frame()` intact; decide which layer your object belongs to.
 - UI text in Chinese, code and comments in English.
 - If you must change shared code (`layout`, `frame`, input handlers), say so in the PR.
