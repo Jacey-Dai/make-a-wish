@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.8.1 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.8.2 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1104,7 +1104,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     const side = Math.max(22, W * 0.05) + view.rim + view.path * 0.5;
     const fore = Math.max(70, H * 0.12);
     // on screen the pond is between an ellipse and a circle: height/width at least K, narrowing the pond if needed
-    const K = portrait ? 0.95 : 0.56;
+    const K = portrait ? 0.95 : 0.45;
     const avail = H - view.top - fore - view.rim * 2 - view.path - 40 * view.sc;
     const sry = Math.max(60, Math.min(Math.min(W / 2 - side, H) * K, avail / 2));
     const rx = Math.min(W / 2 - side, H, sry / K);
