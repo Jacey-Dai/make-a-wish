@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.6 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.7 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -205,14 +205,6 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     };
   }
   const ell = (g, e) => { g.beginPath(); g.ellipse(e[0], e[1], e[2], e[3], 0, 0, TAU); };
-  // depth of field: re-draw a band of an offscreen canvas blurred (skipped where canvas filters are missing)
-  function blurBand(g, c, y0, y1, px) {
-    if (!('filter' in g) || px <= 0) return;
-    const t = document.createElement('canvas'); t.width = c.width; t.height = c.height;
-    t.getContext('2d').drawImage(c, 0, 0);
-    g.save(); g.beginPath(); g.rect(0, y0, W, y1 - y0); g.clip();
-    g.filter = `blur(${px}px)`; g.drawImage(t, 0, 0, W, H); g.restore();
-  }
   let grainC = null;
   function grain(g, a, op = 'source-over') {
     if (!grainC) {
@@ -225,163 +217,172 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     g.fillStyle = g.createPattern(grainC, 'repeat'); g.fillRect(0, 0, W, H); g.restore();
   }
 
+  const mixc = (a, b, f, al = 1) => `rgba(${a.map((v, i) => Math.round(v + (b[i] - v) * f)).join(',')},${al})`;
+  const FOG = [218, 232, 200];
+  // a mossy boulder lit from the upper left; fog pushes it into the distance
+  function boulder(g, x, y, w, h, fog = 0, moss = 0.7) {
+    const v = srnd(-12, 12), base = [112 + v, 116 + v, 98 + v];
+    g.fillStyle = mixc([10, 20, 8], FOG, fog, 0.35 * (1 - fog));
+    g.beginPath(); g.ellipse(x + w * 0.12, y + h * 0.4, w * 0.6, h * 0.24, 0, 0, TAU); g.fill();
+    const gr = g.createRadialGradient(x - w * 0.18, y - h * 0.26, w * 0.04, x, y, w * 0.62);
+    gr.addColorStop(0, mixc(base.map(c => c * 1.55), FOG, fog)); gr.addColorStop(0.45, mixc(base, FOG, fog)); gr.addColorStop(1, mixc(base.map(c => c * 0.38), FOG, fog));
+    g.fillStyle = gr;
+    g.beginPath(); g.ellipse(x, y, w / 2, h / 2, srnd(-0.15, 0.15), 0, TAU); g.fill();
+    if (srnd(0, 1) < moss) {
+      const mc = srnd(0, 1) < 0.5 ? [108, 138, 62] : [84, 112, 48];
+      const mg = g.createRadialGradient(x - w * 0.08, y - h * 0.3, 0, x - w * 0.05, y - h * 0.2, w * 0.46);
+      mg.addColorStop(0, mixc(mc, FOG, fog, 0.82)); mg.addColorStop(0.65, mixc(mc, FOG, fog, 0.55)); mg.addColorStop(1, mixc(mc, FOG, fog, 0));
+      g.fillStyle = mg;
+      g.beginPath(); g.ellipse(x - w * 0.05, y - h * 0.22, w * 0.46, h * 0.34, 0, 0, TAU); g.fill();
+      for (let i = 0; i < w / 4; i++) {
+        g.fillStyle = srnd(0, 1) < 0.5 ? mixc([170, 205, 90], FOG, fog, 0.5) : mixc([40, 70, 25], FOG, fog, 0.4);
+        g.beginPath(); g.arc(x + srnd(-0.4, 0.35) * w, y - srnd(0.05, 0.42) * h, srnd(0.6, 1.8) * view.sc, 0, TAU); g.fill();
+      }
+    }
+  }
+  function fern(g, bx, by, len, ang, col, fog = 0) {
+    const sc = view.sc;
+    g.strokeStyle = mixc([40, 72, 30], FOG, fog); g.lineWidth = 1.3 * sc;
+    const ex = bx + Math.cos(ang) * len, ey = by + Math.sin(ang) * len;
+    const cx = bx + Math.cos(ang + 0.45) * len * 0.6, cy = by + Math.sin(ang + 0.45) * len * 0.6;
+    g.beginPath(); g.moveTo(bx, by); g.quadraticCurveTo(cx, cy, ex, ey); g.stroke();
+    for (let t = 0.1; t < 1; t += 0.05) {
+      const u = 1 - t, px = u * u * bx + 2 * u * t * cx + t * t * ex, py = u * u * by + 2 * u * t * cy + t * t * ey;
+      const l = (1 - t) * 10 * sc + 2 * sc, da = Math.atan2(ey - cy, ex - cx) * t + Math.atan2(cy - by, cx - bx) * (1 - t);
+      for (const sd of [-1, 1]) {
+        const a = da + sd * 1.15;
+        g.fillStyle = mixc(sd < 0 ? col : col.map(c => c * 0.75), FOG, fog);
+        g.beginPath(); g.ellipse(px + Math.cos(a) * l * 0.5, py + Math.sin(a) * l * 0.5, l * 0.5, l * 0.12, a, 0, TAU); g.fill();
+      }
+    }
+  }
+  function blurInto(g, src, px) {
+    g.save();
+    if ('filter' in g && px > 0) g.filter = `blur(${px}px)`;
+    g.drawImage(src, 0, 0, W, H);
+    g.restore();
+  }
+
   function paintBackground() {
     const [c, g] = offscreen();
-    const top = view.top, sc = view.sc, R = rings();
-    const wt = top * 0.36;
-    // canopy haze
+    const sc = view.sc, R = rings();
+    // on tall screens the forest comes down to meet the pond instead of leaving an empty lawn
+    const wTop = pond.cy - pond.ry * view.T - view.wallH, top = Math.max(view.top, wTop - H * 0.28);
+    // bright mist deep in the forest
     let gr = g.createLinearGradient(0, 0, 0, top);
-    gr.addColorStop(0, '#f3f8d2'); gr.addColorStop(0.3, '#bcdc7a'); gr.addColorStop(1, '#355a2a');
+    gr.addColorStop(0, '#e9f0cf'); gr.addColorStop(0.55, '#c6d8a6'); gr.addColorStop(1, '#91aa72');
     g.fillStyle = gr; g.fillRect(0, 0, W, top + 2);
-    for (let i = 0; i < 9; i++) {
-      g.fillStyle = 'rgba(58,66,44,0.4)';
-      const x = srnd(0, W), w = srnd(5, 15) * sc;
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w * 1.4, wt + 10); g.lineTo(x - w * 0.4, wt + 10); g.fill();
-    }
-    const layers = [['#b3d86a', '#e2f29c', 0.55], ['#6ea23e', '#a6d258', 0.42], ['#2e5926', '#4f8c33', 0.3]];
-    for (const [base, hi, yMax] of layers) {
-      const n = Math.ceil(W / 22);
-      for (let i = 0; i < n; i++) {
-        const x = srnd(-40, W + 40), y = srnd(-40, top * yMax), r = srnd(26, 64) * sc;
-        g.globalAlpha = 0.85; g.fillStyle = base; g.beginPath(); g.arc(x, y, r * 0.8, 0, TAU); g.fill();
-        g.globalAlpha = 0.8;
-        for (let k = 0; k < 18; k++) {
-          const a = srnd(0, TAU), d = Math.sqrt(srnd(0, 1)) * r, lr = srnd(0.1, 0.2) * r;
-          g.fillStyle = srnd(0, 1) < 0.5 - Math.sin(a) * 0.3 ? hi : base;
-          g.beginPath(); g.ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d, lr, lr * 0.55, srnd(0, TAU), 0, TAU); g.fill();
+    gr = g.createRadialGradient(W * 0.42, top * 0.3, 0, W * 0.42, top * 0.3, Math.max(W, top) * 0.7);
+    gr.addColorStop(0, 'rgba(255,252,222,0.85)'); gr.addColorStop(1, 'rgba(255,252,222,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, top + 2);
+    // receding rows of trees: each row further back is thinner, paler and softer
+    const rows = [
+      { n: W / 14, w: [3, 8], base: top * 0.5, fog: 0.78, blur: 3.5, col: [86, 104, 74] },
+      { n: W / 22, w: [6, 13], base: top * 0.64, fog: 0.58, blur: 2.4, col: [72, 88, 60] },
+      { n: W / 40, w: [11, 22], base: top * 0.8, fog: 0.36, blur: 1.4, col: [58, 70, 48] },
+    ];
+    view.deerY = top * 0.66;
+    for (const L of rows) {
+      const [lc, lg] = offscreen();
+      // canopy
+      for (let i = 0; i < W / 16; i++) {
+        const x = srnd(-30, W + 30), y = srnd(-30, top * 0.22), r = srnd(20, 50) * sc;
+        for (let k = 0; k < 14; k++) {
+          const a = srnd(0, TAU), d = Math.sqrt(srnd(0, 1)) * r, lr = srnd(0.12, 0.24) * r;
+          lg.fillStyle = mixc(srnd(0, 1) < 0.4 ? [150, 190, 80] : [62, 98, 42], FOG, L.fog);
+          lg.beginPath(); lg.ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d, lr, lr * 0.6, srnd(0, TAU), 0, TAU); lg.fill();
         }
-        g.globalAlpha = 1;
       }
-    }
-    blurBand(g, c, 0, wt + 30 * sc, 3.2 * sc);
-    // mossy ruin wall
-    gr = g.createLinearGradient(0, wt, 0, top);
-    gr.addColorStop(0, '#838c74'); gr.addColorStop(1, '#434b3c');
-    g.fillStyle = gr; g.fillRect(0, wt, W, top - wt);
-    const bh = 24 * sc;
-    for (let y = wt, r = 0; y < top; y += bh, r++) {
-      for (let x = -srnd(0, 40) * sc; x < W; ) {
-        const bw = srnd(38, 74) * sc, v = srnd(-16, 16);
-        g.fillStyle = `rgba(${128 + v},${136 + v},${114 + v},0.55)`;
-        g.fillRect(x + 1, y + 1, bw - 2, bh - 2);
-        g.strokeStyle = 'rgba(28,34,24,0.35)'; g.lineWidth = 1;
-        g.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
-        x += bw;
+      // trunks, lit on the left
+      for (let i = 0; i < L.n; i++) {
+        const x = srnd(0, W), w = srnd(L.w[0], L.w[1]) * sc, b = L.base + srnd(0, 6) * sc;
+        if (L.fog < 0.5 && Math.abs(x - pond.cx) < W * 0.08) continue;
+        const tg = lg.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+        tg.addColorStop(0, mixc(L.col.map(v => v * 1.5), FOG, L.fog)); tg.addColorStop(0.4, mixc(L.col, FOG, L.fog)); tg.addColorStop(1, mixc(L.col.map(v => v * 0.55), FOG, L.fog));
+        lg.fillStyle = tg;
+        lg.beginPath(); lg.moveTo(x - w * 0.35, -10); lg.lineTo(x + w * 0.35, -10);
+        lg.lineTo(x + w * 0.5, b - w * 0.4); lg.quadraticCurveTo(x + w * 0.9, b, x + w * 1.1, b);
+        lg.lineTo(x - w * 1.1, b); lg.quadraticCurveTo(x - w * 0.9, b, x - w * 0.5, b - w * 0.4); lg.closePath(); lg.fill();
+        if (srnd(0, 1) < 0.6) {
+          lg.fillStyle = mixc([110, 150, 60], FOG, L.fog, 0.7);
+          lg.fillRect(x - w * 0.5, b - srnd(10, 40) * sc, w * 0.5, srnd(8, 30) * sc);
+        }
       }
-    }
-    for (let i = 0; i < W / 9; i++) {
-      const y = srnd(0, 1) < 0.6 ? srnd(wt, wt + (top - wt) * 0.35) : srnd(top - (top - wt) * 0.3, top);
-      g.fillStyle = srnd(0, 1) < 0.5 ? 'rgba(122,166,58,0.35)' : 'rgba(170,210,85,0.25)';
-      g.beginPath(); g.ellipse(srnd(0, W), y, srnd(10, 34) * sc, srnd(4, 12) * sc, 0, 0, TAU); g.fill();
-    }
-    // arch in the middle, lit from beyond, with water spilling out of it
-    const aw = Math.max(70, Math.min(150, W * 0.13)), ah = (top - wt) * 0.86, ax = pond.cx;
-    const archPath = () => {
-      g.beginPath();
-      g.moveTo(ax - aw / 2, top);
-      g.lineTo(ax - aw / 2, top - ah + aw / 2);
-      g.arc(ax, top - ah + aw / 2, aw / 2, Math.PI, 0);
-      g.lineTo(ax + aw / 2, top);
-      g.closePath();
-    };
-    g.save(); g.strokeStyle = '#a3ab90'; g.lineWidth = 16 * sc; archPath(); g.stroke(); g.restore();
-    g.strokeStyle = 'rgba(40,46,34,0.4)'; g.lineWidth = 1;
-    for (let i = 0; i <= 8; i++) {
-      const a = Math.PI + i / 8 * Math.PI, cx0 = ax, cy0 = top - ah + aw / 2;
-      g.beginPath(); g.moveTo(cx0 + Math.cos(a) * (aw / 2), cy0 + Math.sin(a) * (aw / 2));
-      g.lineTo(cx0 + Math.cos(a) * (aw / 2 + 8 * sc), cy0 + Math.sin(a) * (aw / 2 + 8 * sc)); g.stroke();
-    }
-    gr = g.createLinearGradient(0, top - ah, 0, top);
-    gr.addColorStop(0, '#f6f9cf'); gr.addColorStop(0.55, '#c3df7f'); gr.addColorStop(1, '#6e9b44');
-    g.fillStyle = gr; archPath(); g.fill();
-    g.fillStyle = 'rgba(90,130,50,0.5)';
-    for (let i = 0; i < 10; i++) { g.beginPath(); g.ellipse(ax + srnd(-aw * 0.45, aw * 0.45), top - srnd(4, ah * 0.35), srnd(5, 14) * sc, srnd(3, 6) * sc, 0, 0, TAU); g.fill(); }
-    // ivy curtains, lime in the light and deep green in the shade
-    const ivy = ['#2c5626', '#3f7530', '#5f9a36', '#93c64a', '#b9de62'];
-    const strands = Math.ceil(W / 7);
-    for (let i = 0; i < strands; i++) {
-      const x0 = srnd(0, W), len = srnd(0.15, 0.9) * (top - wt + 20 * sc), ph = srnd(0, TAU);
-      if (Math.abs(x0 - ax) < aw * 0.45 && srnd(0, 1) < 0.7) continue;
-      for (let t = 0; t < len; t += 4 * sc) {
-        if (srnd(0, 1) < t / len * 0.6) continue;
-        g.fillStyle = ivy[Math.floor(srnd(0, 5))];
-        g.beginPath();
-        g.ellipse(x0 + Math.sin(t * 0.04 + ph) * 5 * sc + srnd(-4, 4) * sc, wt - 14 * sc + t, srnd(3, 7) * sc, srnd(2, 4.5) * sc, srnd(0, TAU), 0, TAU);
-        g.fill();
+      // forest floor and undergrowth for this row
+      gr = lg.createLinearGradient(0, L.base - 6 * sc, 0, top);
+      gr.addColorStop(0, mixc([70, 96, 50], FOG, L.fog, 0)); gr.addColorStop(0.15, mixc([70, 96, 50], FOG, L.fog, 0.9)); gr.addColorStop(1, mixc([70, 96, 50], FOG, L.fog * 0.8, 1));
+      lg.fillStyle = gr; lg.fillRect(0, L.base - 6 * sc, W, top - L.base + 8);
+      for (let i = 0; i < W / 4; i++) {
+        const x = srnd(-10, W + 10), r = srnd(5, 22) * sc, y = L.base + srnd(-3, 10) * sc;
+        lg.fillStyle = mixc(srnd(0, 1) < 0.5 ? [70, 108, 44] : [118, 156, 68], FOG, L.fog);
+        lg.beginPath(); lg.ellipse(x, y, r, r * srnd(0.4, 0.8), 0, Math.PI, TAU); lg.fill();
       }
+      blurInto(g, lc, L.blur * sc);
+      // haze between rows
+      const hz = L.base + 40 * sc;
+      gr = g.createLinearGradient(0, 0, 0, hz);
+      gr.addColorStop(0, 'rgba(225,236,205,0.05)'); gr.addColorStop(L.base / hz, 'rgba(225,236,205,0.3)'); gr.addColorStop(1, 'rgba(225,236,205,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, W, hz);
     }
-    blurBand(g, c, 0, top, 1.3 * sc);
-    gr = g.createLinearGradient(0, 0, 0, top);
-    gr.addColorStop(0, 'rgba(236,246,206,0.32)'); gr.addColorStop(0.6, 'rgba(220,236,190,0.14)'); gr.addColorStop(1, 'rgba(220,236,190,0.05)');
-    g.fillStyle = gr; g.fillRect(0, 0, W, top);
+    // god rays through the trees
     g.save(); g.globalCompositeOperation = 'screen';
-    for (let i = 0; i < 46; i++) {
-      const x = srnd(0, W), y = srnd(0, wt + 20 * sc), r = srnd(4, 16) * sc;
-      const bg = g.createRadialGradient(x, y, 0, x, y, r);
-      bg.addColorStop(0, 'rgba(255,255,215,0.3)'); bg.addColorStop(0.7, 'rgba(255,255,215,0.18)'); bg.addColorStop(1, 'rgba(255,255,215,0)');
-      g.fillStyle = bg; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    for (let i = 0; i < 5; i++) {
+      const x = W * (0.15 + i * 0.17) + srnd(-20, 20), w = srnd(18, 46) * sc;
+      gr = g.createLinearGradient(0, 0, 0, top);
+      gr.addColorStop(0, 'rgba(255,250,210,0.28)'); gr.addColorStop(1, 'rgba(255,250,210,0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w * 2.2 + top * 0.25, top); g.lineTo(x + w * 0.6 + top * 0.25, top); g.fill();
     }
     g.restore();
-    // lawn
+    // forest floor around the pond
     gr = g.createLinearGradient(0, top, 0, H);
-    gr.addColorStop(0, '#6c9a3a'); gr.addColorStop(1, '#2f5222');
+    gr.addColorStop(0, mixc([70, 96, 50], FOG, 0.3)); gr.addColorStop(0.4, '#4d6e30'); gr.addColorStop(1, '#25391a');
     g.fillStyle = gr; g.fillRect(0, top, W, H - top);
-    gr = g.createLinearGradient(0, top, 0, top + 26 * sc);
-    gr.addColorStop(0, 'rgba(15,30,10,0.45)'); gr.addColorStop(1, 'rgba(15,30,10,0)');
-    g.fillStyle = gr; g.fillRect(0, top, W, 26 * sc);
+    for (let i = 0; i < W * H / 500; i++) {
+      const x = srnd(0, W), y = srnd(top, H), f = (y - top) / (H - top), r = srnd(2, 7) * sc * (0.5 + f);
+      g.fillStyle = srnd(0, 1) < 0.5 ? `rgba(130,170,62,${0.12 + f * 0.1})` : `rgba(30,52,20,${0.12 + f * 0.14})`;
+      g.beginPath(); g.ellipse(x, y, r, r * 0.45, 0, 0, TAU); g.fill();
+    }
     g.lineWidth = 0.8;
-    for (let i = 0; i < W * H / 260; i++) {
+    for (let i = 0; i < W * H / 320; i++) {
       const x = srnd(0, W), y = srnd(top, H), f = (y - top) / (H - top);
-      g.strokeStyle = srnd(0, 1) < 0.5 ? `rgba(190,228,110,${0.15 + f * 0.25})` : `rgba(22,50,16,${0.2 + f * 0.25})`;
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + srnd(-2, 2), y - srnd(2, 4 + f * 6) * sc); g.stroke();
+      g.strokeStyle = srnd(0, 1) < 0.5 ? `rgba(180,215,105,${0.12 + f * 0.25})` : `rgba(20,40,14,${0.18 + f * 0.25})`;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + srnd(-2, 2), y - srnd(2, 4 + f * 5) * sc); g.stroke();
     }
     g.lineWidth = 1;
-    g.save(); g.globalCompositeOperation = 'screen';
-    for (let i = 0; i < 14; i++) {
-      const x = srnd(0, W), y = srnd(top, H), r = srnd(30, 90) * sc;
-      g.save(); g.translate(x, y); g.scale(1, 0.45);
-      const sg = g.createRadialGradient(0, 0, 0, 0, 0, r);
-      sg.addColorStop(0, 'rgba(230,240,150,0.22)'); sg.addColorStop(1, 'rgba(230,240,150,0)');
-      g.fillStyle = sg; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill(); g.restore();
+    for (let i = 0; i < W * H / 9000; i++) {
+      const x = srnd(0, W), y = srnd(top + 6, H), l = srnd(3, 6) * sc, a = srnd(0, TAU);
+      g.fillStyle = ['rgba(160,110,45,0.55)', 'rgba(190,150,70,0.5)', 'rgba(120,80,35,0.5)'][i % 3];
+      g.beginPath(); g.ellipse(x, y, l, l * 0.4, a, 0, TAU); g.fill();
     }
-    g.restore();
     grain(g, 0.05);
-    {
-      const e = R.path;
-      g.save(); g.translate(e[0], e[1] + 6 * sc); g.scale(1, (e[3] + 18 * sc) / (e[2] + 24 * sc));
-      const sg = g.createRadialGradient(0, 0, (e[2] + 24 * sc) * 0.8, 0, 0, e[2] + 24 * sc);
-      sg.addColorStop(0, 'rgba(10,24,8,0.4)'); sg.addColorStop(1, 'rgba(10,24,8,0)');
-      g.fillStyle = sg; g.beginPath(); g.arc(0, 0, e[2] + 24 * sc, 0, TAU); g.fill(); g.restore();
+    // mossy rock pile behind the pond with the waterfall, plus stones and ferns heaped around the pond
+    const ow = Math.max(150, Math.min(340, W * 0.3)), ly = Math.max(top * 0.72, wTop - Math.max(100, H * 0.13));
+    fall.x = pond.cx; fall.w = Math.max(34, ow * 0.2); fall.y1 = ly + 4 * sc; fall.y2 = wTop + 6 * sc;
+    const pile = [];
+    for (let i = 0; i < 36; i++) {
+      const t = Math.pow(srnd(0, 1), 1.3), y = ly + 8 * sc + (wTop - ly - 8 * sc) * t;
+      const spread = ow * (0.35 + t * 0.4);
+      pile.push({ x: pond.cx + srnd(-spread, spread), y, w: srnd(40, 80) * sc * (0.7 + t * 0.5) });
     }
-    for (let i = 0; i < W * H / 6000; i++) {
-      g.fillStyle = srnd(0, 1) < 0.6 ? 'rgba(250,250,240,0.8)' : 'rgba(170,200,250,0.75)';
-      g.beginPath(); g.arc(srnd(0, W), srnd(top + 6, H), srnd(0.8, 1.8) * sc, 0, TAU); g.fill();
+    for (let i = 0; i < 22; i++) {
+      const a = srnd(Math.PI * 1.05, Math.PI * 1.95), e = R.path;
+      const x = e[0] + Math.cos(a) * (e[2] + srnd(0, 30) * sc), y = e[1] + Math.sin(a) * (e[3] + srnd(0, 14) * sc) - srnd(0, 12) * sc;
+      if (Math.abs(x - pond.cx) < ow * 0.5) continue;
+      pile.push({ x, y, w: srnd(26, 60) * sc });
     }
-    // broken columns standing in the grass
-    for (const fx of [0.07, 0.17, 0.83, 0.93]) {
-      const x = W * fx + srnd(-10, 10), cw = 20 * sc, chh = (top - wt) * srnd(0.5, 1.05), by = top + srnd(8, 22) * sc;
-      g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(x + 6 * sc, by, cw, cw * 0.3, 0, 0, TAU); g.fill();
-      gr = g.createLinearGradient(x - cw / 2, 0, x + cw / 2, 0);
-      gr.addColorStop(0, '#c5c4a6'); gr.addColorStop(1, '#6f7562');
-      g.fillStyle = gr;
-      g.beginPath(); g.moveTo(x - cw / 2, by); g.lineTo(x - cw / 2, by - chh);
-      g.lineTo(x - cw * 0.15, by - chh - srnd(4, 12) * sc); g.lineTo(x + cw * 0.1, by - chh + srnd(0, 6) * sc);
-      g.lineTo(x + cw / 2, by - chh - srnd(2, 8) * sc); g.lineTo(x + cw / 2, by); g.closePath(); g.fill();
-      g.fillStyle = '#d2d0b3'; g.fillRect(x - cw * 0.7, by - 7 * sc, cw * 1.4, 7 * sc);
-      g.fillStyle = 'rgba(130,175,60,0.6)';
-      for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(x + srnd(-cw / 2, cw / 2), by - srnd(0, chh), srnd(3, 7) * sc, srnd(2, 4) * sc, 0, 0, TAU); g.fill(); }
+    // the stones the water spills between
+    for (const s of [-1, 1]) pile.push({ x: fall.x + s * fall.w * 0.95, y: ly + 4 * sc, w: fall.w * 1.3 });
+    pile.sort((p, q) => p.y - q.y);
+    const [pc, pg] = offscreen();
+    for (const st of pile) {
+      const fog = Math.max(0, Math.min(0.35, (top - st.y) / top));
+      boulder(pg, st.x, st.y, st.w, st.w * srnd(0.5, 0.66), fog, 0.8);
+      pg.strokeStyle = 'rgba(140,180,80,0.7)'; pg.lineWidth = 1;
+      for (let k = 0; k < 6; k++) { const gx = st.x + srnd(-st.w * 0.4, st.w * 0.4), gy = st.y + st.w * 0.22; pg.beginPath(); pg.moveTo(gx, gy); pg.lineTo(gx + srnd(-3, 3) * sc, gy - srnd(4, 10) * sc); pg.stroke(); }
     }
-    // mossy steps carrying the water from the arch down to the pond
-    const wTop = pond.cy - pond.ry * view.T - view.wallH;
-    fall.x = ax; fall.w = aw * 0.42; fall.y1 = top - 2; fall.y2 = wTop + 6 * sc;
-    const sw = aw * 0.95, steps = Math.max(2, Math.round((wTop - top) / (14 * sc)));
-    for (let i = 0; i < steps; i++) {
-      const y0 = top + (wTop - top) * i / steps, y1 = top + (wTop - top) * (i + 1) / steps + 2;
-      g.fillStyle = i % 2 ? '#6c7560' : '#7d866f';
-      g.fillRect(ax - sw / 2 - i * 2 * sc, y0, sw + i * 4 * sc, y1 - y0);
-      g.fillStyle = 'rgba(140,185,70,0.55)';
-      g.fillRect(ax - sw / 2 - i * 2 * sc, y0, sw + i * 4 * sc, 3 * sc);
-    }
+    grain(pg, 0.14, 'source-atop');
+    blurInto(g, pc, 0.6 * sc);
     // basin wall
     ell(g, R.basin);
     gr = g.createLinearGradient(0, R.basin[1] - R.basin[3], 0, R.basin[1]);
@@ -437,40 +438,33 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   function paintForeground() {
     const [c, g] = offscreen();
     const sc = view.sc;
-    const rock = (x0, dir) => {
-      const w = Math.max(90, W * 0.2), h = Math.max(70, H * 0.15);
-      g.save(); g.translate(x0, H); g.scale(dir, 1);
-      const gr = g.createLinearGradient(0, -h, 0, 0);
-      gr.addColorStop(0, '#4b5240'); gr.addColorStop(1, '#1b2018');
-      g.fillStyle = gr;
-      g.beginPath(); g.moveTo(-10, 10); g.lineTo(-10, -h * 0.8);
-      g.quadraticCurveTo(w * 0.2, -h * 1.1, w * 0.45, -h * 0.75);
-      g.quadraticCurveTo(w * 0.7, -h * 0.55, w * 0.8, -h * 0.25);
-      g.quadraticCurveTo(w * 0.95, -h * 0.05, w, 10); g.closePath(); g.fill();
-      g.fillStyle = 'rgba(100,150,60,0.55)';
-      for (let i = 0; i < 14; i++) { g.beginPath(); g.ellipse(srnd(0, w * 0.6), -h * srnd(0.55, 0.9), srnd(8, 20) * sc, srnd(3, 7) * sc, srnd(-0.4, 0.4), 0, TAU); g.fill(); }
-      // ferns
-      for (let f = 0; f < 4; f++) {
-        const bx = srnd(w * 0.05, w * 0.5), by = -h * srnd(0.6, 0.85), len = srnd(50, 90) * sc, ang = srnd(-2.4, -1.2);
-        g.strokeStyle = '#2f5a26'; g.lineWidth = 1.5 * sc;
-        g.beginPath(); g.moveTo(bx, by);
-        const ex = bx + Math.cos(ang) * len, ey = by + Math.sin(ang) * len;
-        g.quadraticCurveTo(bx + Math.cos(ang + 0.5) * len * 0.6, by + Math.sin(ang + 0.5) * len * 0.6, ex, ey); g.stroke();
-        for (let t = 0.15; t < 1; t += 0.09) {
-          const px = bx + (ex - bx) * t, py = by + (ey - by) * t, l = (1 - t) * 14 * sc + 3 * sc;
-          g.fillStyle = t < 0.5 ? '#3f7a31' : '#5c9a42';
-          for (const sd of [-1, 1]) { g.beginPath(); g.ellipse(px + Math.cos(ang + sd * 1.3) * l * 0.5, py + Math.sin(ang + sd * 1.3) * l * 0.5, l * 0.5, l * 0.16, ang + sd * 1.3, 0, TAU); g.fill(); }
-        }
+    // heaped mossy rocks and ferns close to the lens, so they go soft
+    const [lc, lg] = offscreen();
+    const pileAt = (x0, dir) => {
+      const w = Math.max(110, W * 0.26), h = Math.max(80, H * 0.17);
+      const rocks = [];
+      for (let i = 0; i < 9; i++) {
+        const t = srnd(0, 1);
+        rocks.push({ x: x0 + dir * srnd(-0.1, 0.85) * w * (1 - t * 0.6), y: H - h * t * 0.85 + srnd(0, 10), w: srnd(60, 120) * sc * (1.1 - t * 0.4) });
       }
-      g.restore();
+      rocks.sort((p, q) => p.y - q.y);
+      for (const r of rocks) {
+        boulder(lg, r.x, r.y, r.w, r.w * srnd(0.55, 0.75), 0, 0.85);
+        if (srnd(0, 1) < 0.5) fern(lg, r.x, r.y - r.w * 0.2, srnd(50, 90) * sc, dir > 0 ? srnd(-2.4, -1.3) : srnd(-1.8, -0.7), [70, 122, 46]);
+      }
+      for (let i = 0; i < 4; i++) fern(lg, x0 + dir * srnd(0, w * 0.5), H - srnd(0, h * 0.6), srnd(60, 110) * sc, dir > 0 ? srnd(-2, -0.9) : srnd(-2.2, -1.1), [62, 112, 40]);
     };
-    rock(0, 1); rock(W, -1);
-    blurBand(g, c, 0, H, 2.6 * sc);
+    pileAt(0, 1); pileAt(W, -1);
+    // near the lens and out of the sun
+    lg.save(); lg.globalCompositeOperation = 'source-atop';
+    lg.fillStyle = 'rgba(14,30,12,0.42)'; lg.fillRect(0, 0, W, H);
+    lg.restore();
+    blurInto(g, lc, 2.4 * sc);
     let gr = g.createRadialGradient(W / 2, H * 0.58, Math.min(W, H) * 0.42, W / 2, H * 0.58, Math.max(W, H) * 0.85);
-    gr.addColorStop(0, 'rgba(6,16,8,0)'); gr.addColorStop(1, 'rgba(6,16,8,0.55)');
+    gr.addColorStop(0, 'rgba(6,16,8,0)'); gr.addColorStop(1, 'rgba(6,16,8,0.5)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
     gr = g.createLinearGradient(0, 0, 0, 110);
-    gr.addColorStop(0, 'rgba(12,28,14,0.55)'); gr.addColorStop(1, 'rgba(12,28,14,0)');
+    gr.addColorStop(0, 'rgba(12,28,14,0.35)'); gr.addColorStop(1, 'rgba(12,28,14,0)');
     g.fillStyle = gr; g.fillRect(0, 0, W, 110);
     grain(g, 0.035);
     return c;
@@ -1111,33 +1105,78 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     }
     ctx.restore();
   }
+  // F-art: waterfall. Streaks scroll down a translucent sheet; foam and mist churn where it lands.
+  let fallTex = null;
+  function makeFallTex() {
+    const tw = 64, th = 256;
+    fallTex = document.createElement('canvas'); fallTex.width = tw; fallTex.height = th;
+    const g = fallTex.getContext('2d');
+    for (let i = 0; i < 90; i++) {
+      const x = Math.random() * tw, len = rnd(30, 140), y = Math.random() * th, a = rnd(0.15, 0.7), lw = rnd(0.6, 2.4);
+      for (const oy of [-th, 0]) {
+        const gr = g.createLinearGradient(0, y + oy, 0, y + oy + len);
+        gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, `rgba(255,255,255,${a})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.strokeStyle = gr; g.lineWidth = lw;
+        g.beginPath(); g.moveTo(x, y + oy); g.lineTo(x, y + oy + len); g.stroke();
+      }
+    }
+  }
   function drawWaterfall(dt) {
     const { x, w, y1, y2 } = fall;
     if (y2 <= y1) return;
+    if (!fallTex) makeFallTex();
     fall.t -= dt;
-    const g = ctx.createLinearGradient(0, y1, 0, y2);
-    g.addColorStop(0, 'rgba(225,248,232,0.5)'); g.addColorStop(1, 'rgba(205,240,225,0.35)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(x - w / 2, y1); ctx.lineTo(x + w / 2, y1); ctx.lineTo(x + w * 0.56, y2); ctx.lineTo(x - w * 0.56, y2); ctx.fill();
-    const seg = 16 * view.sc, gapL = 30 * view.sc;
-    for (let i = 0; i < 14; i++) {
-      // uneven sheets of falling water: each strand has its own weight, speed and brightness
-      const fx = x - w / 2 + (i + 0.5 + Math.sin(i * 7.1) * 0.3) / 14 * w;
-      ctx.strokeStyle = `rgba(255,255,255,${0.2 + 0.25 * (0.5 + 0.5 * Math.sin(i * 3.7 + tNow * 0.8))})`;
-      ctx.lineWidth = 0.8 + 1.4 * (0.5 + 0.5 * Math.sin(i * 5.3));
-      for (let yy = y1 - gapL + ((tNow * (120 + 40 * Math.sin(i * 2.3)) + i * 37) % gapL); yy < y2; yy += gapL) {
-        const a = Math.max(y1, yy), b = Math.min(y2, yy + seg);
-        if (b <= a) continue;
-        ctx.beginPath(); ctx.moveTo(fx, a); ctx.lineTo(fx + (b - y1) / (y2 - y1) * (fx - x) * 0.12, b); ctx.stroke();
-      }
+    const sc = view.sc, hw = w / 2;
+    const sheet = () => {
+      ctx.beginPath();
+      ctx.moveTo(x - hw, y1);
+      ctx.quadraticCurveTo(x, y1 - 5 * sc, x + hw, y1);
+      ctx.bezierCurveTo(x + hw * 1.05, y1 + (y2 - y1) * 0.4, x + hw * 1.15, y2 - 10 * sc, x + hw * 1.25, y2);
+      ctx.quadraticCurveTo(x, y2 + 6 * sc, x - hw * 1.25, y2);
+      ctx.bezierCurveTo(x - hw * 1.15, y2 - 10 * sc, x - hw * 1.05, y1 + (y2 - y1) * 0.4, x - hw, y1);
+      ctx.closePath();
+    };
+    ctx.save();
+    sheet(); ctx.clip();
+    let g = ctx.createLinearGradient(0, y1, 0, y2);
+    g.addColorStop(0, 'rgba(190,225,210,0.3)'); g.addColorStop(1, 'rgba(230,248,242,0.5)');
+    ctx.fillStyle = g; ctx.fillRect(x - w, y1 - 6 * sc, w * 2, y2 - y1 + 14 * sc);
+    const th = 150 * sc;
+    for (const [sp, a, k] of [[1, 0.75, 0], [1.55, 0.5, 0.37]]) {
+      const o = (tNow * 170 * sp * sc + k * th) % th;
+      ctx.globalAlpha = a;
+      for (let yy = y1 - th + o; yy < y2 + 8 * sc; yy += th) ctx.drawImage(fallTex, x - hw * 1.3, yy, w * 1.3, th);
     }
-    const m = ctx.createRadialGradient(x, y2, 0, x, y2, w * 1.3);
-    m.addColorStop(0, 'rgba(238,252,244,0.45)'); m.addColorStop(1, 'rgba(238,252,244,0)');
-    ctx.fillStyle = m; ctx.beginPath(); ctx.arc(x, y2, w * 1.3, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+    g = ctx.createLinearGradient(x - hw * 1.3, 0, x + hw * 1.3, 0);
+    g.addColorStop(0, 'rgba(20,45,35,0.35)'); g.addColorStop(0.3, 'rgba(20,45,35,0)'); g.addColorStop(0.7, 'rgba(20,45,35,0)'); g.addColorStop(1, 'rgba(20,45,35,0.4)');
+    ctx.fillStyle = g; ctx.fillRect(x - w, y1 - 6 * sc, w * 2, y2 - y1 + 14 * sc);
+    ctx.restore();
+    // the glassy lip where the water bends over the ledge
+    ctx.strokeStyle = 'rgba(255,255,250,0.75)'; ctx.lineWidth = 1.6 * sc;
+    ctx.beginPath(); ctx.moveTo(x - hw, y1 + 1); ctx.quadraticCurveTo(x, y1 - 4 * sc, x + hw, y1 + 1); ctx.stroke();
+    // foam
+    for (let i = 0; i < 8; i++) {
+      const fx = x + (i / 7 - 0.5) * w * 1.3 + Math.sin(tNow * 3 + i * 1.7) * 3 * sc;
+      const r = (7 + 4 * Math.sin(tNow * 4.3 + i * 2.1)) * sc;
+      const fg = ctx.createRadialGradient(fx, y2, 0, fx, y2, r);
+      fg.addColorStop(0, 'rgba(250,255,252,0.7)'); fg.addColorStop(1, 'rgba(250,255,252,0)');
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(fx, y2, r, 0, TAU); ctx.fill();
+    }
+    // mist rising off the plunge
+    if (!fall.mist) fall.mist = [];
+    if (fall.mist.length < 24 && Math.random() < dt * 14) fall.mist.push({ x: x + rnd(-hw, hw), y: y2, r: rnd(6, 12) * sc, vx: rnd(-8, 8) * sc, vy: -rnd(8, 20) * sc, life: 1 });
+    for (let i = fall.mist.length - 1; i >= 0; i--) {
+      const m = fall.mist[i];
+      m.life -= dt * 0.45; m.x += m.vx * dt; m.y += m.vy * dt; m.r += 10 * sc * dt;
+      if (m.life <= 0) { fall.mist.splice(i, 1); continue; }
+      const mg = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r);
+      mg.addColorStop(0, `rgba(240,250,245,${0.22 * m.life})`); mg.addColorStop(1, 'rgba(240,250,245,0)');
+      ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, TAU); ctx.fill();
+    }
     if (fall.t <= 0) {
-      fall.t = rnd(0.35, 0.7);
-      addRipple({ x: x + rnd(-w * 0.35, w * 0.35), y: toWorldY(y2) + 10 * S, r: 2 * S, max: rnd(30, 50) * S, life: 0.9, a: 0.45, n: 3 });
+      fall.t = rnd(0.25, 0.5);
+      addRipple({ x: x + rnd(-w * 0.45, w * 0.45), y: toWorldY(y2) + 12 * S, r: 2 * S, max: rnd(30, 50) * S, life: 0.9, a: 0.45, n: 3 });
     }
   }
   function drawSunlight(dt) {
@@ -1226,54 +1265,109 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(g.x, g.y, r, 0, TAU); ctx.fill();
     }
   }
-  const LILY = [[79, 125, 42], [107, 154, 53], [138, 180, 67]];
+  const LILY = [[70, 116, 38], [96, 142, 48], [124, 166, 60]];
+  let lotusQ = [];
+  // pads lie in the water layer (world units); lotus flowers stand up out of it and are drawn later in screen space
   function drawLilies() {
+    const T = view.T, th = 2.4 * S / T;
     for (const l of lilies) {
       const rot = l.rot + Math.sin(tNow * 0.4 + l.ph) * 0.06;
-      // pads ride the waves
-      const bob = waveAt(l.x, l.y) * 1.6 * S / view.T;
+      const bob = waveAt(l.x, l.y) * 1.6 * S / T;
       const bx = l.x + Math.sin(tNow * 0.3 + l.ph) * 2 * S, by = l.y + Math.cos(tNow * 0.25 + l.ph) * 2 * S + bob;
-      const pad = (ox, oy, r) => { ctx.beginPath(); ctx.moveTo(bx + ox, by + oy); ctx.arc(bx + ox, by + oy, r, rot + 0.28, rot + TAU - 0.28); ctx.closePath(); };
-      ctx.fillStyle = 'rgba(0,18,12,0.32)';
-      pad(3 * S, 4 * S, l.r); ctx.fill();
+      const pad = (ox, oy, r) => { ctx.beginPath(); ctx.moveTo(bx + ox, by + oy); ctx.arc(bx + ox, by + oy, r, rot + 0.24, rot + TAU - 0.24); ctx.closePath(); };
       const c = LILY[l.tone < 0.45 ? 1 : l.tone < 0.8 ? 2 : 0];
+      // the water darkens and mirrors the pad's edge just around it
+      ctx.fillStyle = 'rgba(0,22,14,0.3)';
+      pad(1.5 * S, th + 2 * S, l.r * 1.06); ctx.fill();
+      // thickness: the side of the leaf
+      ctx.fillStyle = tone(c, 0.42);
+      pad(0, th, l.r); ctx.fill();
       const gr = ctx.createRadialGradient(bx - l.r * 0.35, by - l.r * 0.4, l.r * 0.05, bx, by, l.r);
-      gr.addColorStop(0, tone(c, 1.25)); gr.addColorStop(0.65, tone(c, 1)); gr.addColorStop(1, tone(c, 0.72));
+      gr.addColorStop(0, tone(c, 1.3)); gr.addColorStop(0.6, tone(c, 1)); gr.addColorStop(1, tone(c, 0.7));
       ctx.fillStyle = gr;
       pad(0, 0, l.r); ctx.fill();
-      ctx.strokeStyle = tone(c, 0.6, 0.35); ctx.lineWidth = 0.8;
-      for (let i = 1; i < 10; i++) {
-        const a = rot + 0.28 + i * (TAU - 0.56) / 10;
-        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a) * l.r * 0.92, by + Math.sin(a) * l.r * 0.92); ctx.stroke();
+      ctx.save();
+      pad(0, 0, l.r); ctx.clip();
+      // veins radiate from the stem and fork near the rim
+      ctx.strokeStyle = tone(c, 1.45, 0.4); ctx.lineWidth = 0.9 * S;
+      for (let i = 1; i < 14; i++) {
+        const a = rot + 0.24 + i * (TAU - 0.48) / 14, bend = Math.sin(i * 2.7) * 0.12;
+        const ex = bx + Math.cos(a) * l.r, ey = by + Math.sin(a) * l.r;
+        ctx.beginPath(); ctx.moveTo(bx, by);
+        ctx.quadraticCurveTo(bx + Math.cos(a + bend) * l.r * 0.55, by + Math.sin(a + bend) * l.r * 0.55, ex, ey); ctx.stroke();
       }
-      // a raised rim that catches the light, and a waxy sheen
-      ctx.strokeStyle = 'rgba(225,245,170,0.5)'; ctx.lineWidth = 1.1 * S;
-      ctx.beginPath(); ctx.arc(bx, by, l.r - 0.6 * S, Math.PI * 0.95, Math.PI * 1.6); ctx.stroke();
-      ctx.strokeStyle = 'rgba(20,40,12,0.35)';
-      ctx.beginPath(); ctx.arc(bx, by, l.r - 0.6 * S, Math.PI * 0.05, Math.PI * 0.7); ctx.stroke();
-      const sh = ctx.createRadialGradient(bx - l.r * 0.3, by - l.r * 0.35, 0, bx - l.r * 0.3, by - l.r * 0.35, l.r * 0.5);
-      sh.addColorStop(0, 'rgba(255,255,235,0.22)'); sh.addColorStop(1, 'rgba(255,255,235,0)');
+      ctx.strokeStyle = tone(c, 0.55, 0.35); ctx.lineWidth = 0.6 * S;
+      for (let i = 1; i < 14; i++) {
+        const a = rot + 0.24 + (i + 0.5) * (TAU - 0.48) / 14;
+        ctx.beginPath(); ctx.moveTo(bx + Math.cos(a) * l.r * 0.3, by + Math.sin(a) * l.r * 0.3); ctx.lineTo(bx + Math.cos(a) * l.r, by + Math.sin(a) * l.r); ctx.stroke();
+      }
+      ctx.globalAlpha = 0.18; ctx.globalCompositeOperation = 'overlay';
+      if (grainC) { ctx.fillStyle = ctx.createPattern(grainC, 'repeat'); ctx.fillRect(bx - l.r, by - l.r, l.r * 2, l.r * 2); }
+      ctx.restore();
+      // upturned rim catching the light, and a waxy sheen
+      ctx.strokeStyle = 'rgba(225,245,170,0.6)'; ctx.lineWidth = 1.2 * S;
+      ctx.beginPath(); ctx.arc(bx, by, l.r - 0.7 * S, Math.PI * 0.95, Math.PI * 1.65); ctx.stroke();
+      const sh = ctx.createRadialGradient(bx - l.r * 0.3, by - l.r * 0.35, 0, bx - l.r * 0.3, by - l.r * 0.35, l.r * 0.55);
+      sh.addColorStop(0, 'rgba(255,255,235,0.26)'); sh.addColorStop(1, 'rgba(255,255,235,0)');
       ctx.fillStyle = sh; pad(0, 0, l.r); ctx.fill();
-      if (l.flower) {
-        const fx = bx - Math.cos(rot) * l.r * 0.25, fy = by - Math.sin(rot) * l.r * 0.25;
-        ctx.fillStyle = 'rgba(0,20,10,0.25)';
-        ctx.beginPath(); ctx.arc(fx + 2 * S, fy + 3 * S, l.r * 0.45, 0, TAU); ctx.fill();
-        for (let ring = 0; ring < 3; ring++) {
-          const n = 8, pr = l.r * [0.52, 0.4, 0.26][ring];
-          for (let i = 0; i < n; i++) {
-            const a = i / n * TAU + ring * 0.4 + rot;
-            const px = fx + Math.cos(a) * pr * 0.5, py = fy + Math.sin(a) * pr * 0.5;
-            const pg = ctx.createLinearGradient(fx, fy, fx + Math.cos(a) * pr, fy + Math.sin(a) * pr);
-            pg.addColorStop(0, ring ? '#f4e7e0' : '#d9dccb'); pg.addColorStop(1, Math.sin(a) < 0 ? '#ffffff' : '#e8eadc');
-            ctx.fillStyle = pg;
-            ctx.beginPath(); ctx.ellipse(px, py, pr * 0.55, pr * 0.22, a, 0, TAU); ctx.fill();
-          }
-        }
-        const cg = ctx.createRadialGradient(fx, fy, 0, fx, fy, l.r * 0.12);
-        cg.addColorStop(0, '#ffe58a'); cg.addColorStop(1, '#d9a92e');
-        ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(fx, fy, l.r * 0.12, 0, TAU); ctx.fill();
+      // a bead or two of water
+      for (let k = 0; k < 2; k++) {
+        const a = l.ph * (k + 2.3), d = l.r * (0.35 + 0.3 * ((l.ph * 7 + k) % 1));
+        const dx = bx + Math.cos(a) * d, dy = by + Math.sin(a) * d, dr = (1.3 + k * 0.6) * S;
+        ctx.fillStyle = 'rgba(20,50,15,0.35)'; ctx.beginPath(); ctx.arc(dx + dr * 0.4, dy + dr * 0.6, dr, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(210,240,200,0.55)'; ctx.beginPath(); ctx.arc(dx, dy, dr, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.arc(dx - dr * 0.35, dy - dr * 0.35, dr * 0.35, 0, TAU); ctx.fill();
       }
+      if (l.flower) lotusQ.push([bx - Math.cos(rot) * l.r * 0.25, by - Math.sin(rot) * l.r * 0.25, l.r, rot]);
     }
+  }
+  function petal(bx, by, tx, ty, wd, front, ring) {
+    const mx = (bx + tx) / 2, my = (by + ty) / 2, dx = tx - bx, dy = ty - by, L = Math.hypot(dx, dy) || 1;
+    const px = -dy / L * wd, py = dx / L * wd;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.bezierCurveTo(bx + px * 0.9, by + py * 0.9, mx + px * 1.1, my + py * 1.1, tx, ty);
+    ctx.bezierCurveTo(mx - px * 1.1, my - py * 1.1, bx - px * 0.9, by - py * 0.9, bx, by);
+    const g = ctx.createLinearGradient(bx, by, tx, ty);
+    if (front) { g.addColorStop(0, '#d8cfc3'); g.addColorStop(0.55, '#f6efe9'); g.addColorStop(1, '#ee9fb6'); }
+    else { g.addColorStop(0, '#fff6e6'); g.addColorStop(0.6, '#fffdfa'); g.addColorStop(1, '#f6b5c7'); }
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = front ? 'rgba(150,110,120,0.25)' : 'rgba(230,170,185,0.3)'; ctx.lineWidth = 0.6;
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(mx + px * 0.1, my + py * 0.1, tx, ty); ctx.stroke();
+  }
+  function drawLotus(x, y, r, rot) {
+    const T = view.T;
+    const rings = [[8, r * 0.95, r * 0.25, r * 0.3], [7, r * 0.72, r * 0.5, r * 0.24], [5, r * 0.45, r * 0.68, r * 0.2]];
+    const petals = [];
+    rings.forEach(([n, spread, lift, wd], k) => {
+      for (let i = 0; i < n; i++) {
+        const a = rot + i / n * TAU + k * 0.45, ca = Math.cos(a), sa = Math.sin(a);
+        petals.push({ k, sa, bx: x + ca * r * 0.12, by: y + sa * r * 0.12 * T, tx: x + ca * spread, ty: y + sa * spread * T - lift, wd });
+      }
+    });
+    const draw = list => { for (const p of list) petal(p.bx, p.by, p.tx, p.ty, p.wd, p.sa > 0.1, p.k); };
+    // reflection in the water
+    ctx.save();
+    ctx.translate(0, y * 2); ctx.scale(1, -1); ctx.globalAlpha = 0.18;
+    draw(petals.filter(p => p.k === 0));
+    ctx.restore();
+    ctx.fillStyle = 'rgba(0,20,10,0.25)';
+    ctx.beginPath(); ctx.ellipse(x + 2 * S, y + 2 * S, r * 0.55, r * 0.55 * T, 0, 0, TAU); ctx.fill();
+    const back = petals.filter(p => p.sa <= 0.1).sort((p, q) => p.k - q.k || p.sa - q.sa);
+    const front = petals.filter(p => p.sa > 0.1).sort((p, q) => q.k - p.k || p.sa - q.sa);
+    draw(back);
+    const py = y - r * 0.32;
+    const cg = ctx.createRadialGradient(x - r * 0.05, py - r * 0.05, 0, x, py, r * 0.16);
+    cg.addColorStop(0, '#fff09a'); cg.addColorStop(1, '#c9a02c');
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.ellipse(x, py, r * 0.16, r * 0.16 * T + r * 0.04, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e8b93a';
+    for (let i = 0; i < 10; i++) { const a = i / 10 * TAU; ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.2, py + Math.sin(a) * r * 0.2 * T, 0.9 * S, 0, TAU); ctx.fill(); }
+    draw(front);
+  }
+  function drawLotuses() {
+    for (const [wx, wy, r, rot] of lotusQ) { const [x, y] = toScreen(wx, wy); drawLotus(x, y, r * 0.95, rot); }
+    lotusQ = [];
   }
   function drawFlying(dt) {
     for (let i = flying.length - 1; i >= 0; i--) {
@@ -1674,6 +1768,59 @@ void main() {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
+  /* ---------- F-art: a deer now and then, at the edge of the misty trees ---------- */
+  const deer = { on: false, t: rnd(6, 14), x: 0, dir: 1, mode: 'walk', timer: 0, ph: 0, stopX: 0, head: 0 };
+  function drawDeer(dt) {
+    const d = deer, sc = view.sc;
+    if (!d.on) {
+      d.t -= dt;
+      if (d.t > 0) return;
+      d.on = true; d.dir = Math.random() < 0.5 ? 1 : -1; d.mode = 'walk';
+      d.x = d.dir > 0 ? -40 * sc : W + 40 * sc;
+      d.stopX = d.dir > 0 ? W * rnd(0.12, 0.3) : W * rnd(0.7, 0.88);
+    }
+    const sp = 22 * sc;
+    if (d.mode === 'walk') {
+      d.x += d.dir * sp * dt; d.ph += dt * 5.5; d.head += (0 - d.head) * dt * 3;
+      if (d.stopX && (d.x - d.stopX) * d.dir > 0) { d.mode = 'graze'; d.timer = rnd(4, 7); d.stopX = 0; }
+      if (d.x < -60 * sc || d.x > W + 60 * sc) { d.on = false; d.t = rnd(25, 45); return; }
+    } else {
+      d.timer -= dt;
+      const want = d.timer > 1.5 && Math.sin(d.timer * 1.3) > -0.6 ? 1 : 0;
+      d.head += (want - d.head) * dt * 2.5;
+      if (d.timer <= 0) { d.mode = 'walk'; d.dir = -d.dir; }
+    }
+    const h = 42 * sc, gy = view.deerY, x = d.x, col = [150, 118, 82];
+    const c1 = mixc(col, FOG, 0.42), c2 = mixc(col.map(v => v * 0.7), FOG, 0.42), c3 = mixc([235, 225, 205], FOG, 0.35);
+    ctx.save();
+    ctx.translate(x, gy); ctx.scale(d.dir, 1);
+    const L = h * 0.48, bw = h * 0.36, bh = h * 0.17, by = -L - bh * 0.5;
+    const swing = d.mode === 'walk' ? Math.sin(d.ph) * 0.35 : 0;
+    ctx.strokeStyle = c2; ctx.lineCap = 'round'; ctx.lineWidth = 2 * sc;
+    for (const [lx, s] of [[bw * 0.7, 1], [bw * 0.55, -1], [-bw * 0.7, -1], [-bw * 0.55, 1]]) {
+      const a = swing * s;
+      ctx.beginPath(); ctx.moveTo(lx, by + bh * 0.3); ctx.lineTo(lx + Math.sin(a) * L * 0.5, by + bh * 0.3 + L * 0.5); ctx.lineTo(lx + Math.sin(a) * L, 0); ctx.stroke();
+    }
+    ctx.fillStyle = mixc([20, 30, 15], FOG, 0.5, 0.25);
+    ctx.beginPath(); ctx.ellipse(0, 1, bw * 1.1, 2.5 * sc, 0, 0, TAU); ctx.fill();
+    const bg = ctx.createLinearGradient(0, by - bh, 0, by + bh);
+    bg.addColorStop(0, c1); bg.addColorStop(1, c2);
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.ellipse(0, by, bw, bh, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = c3;
+    ctx.beginPath(); ctx.ellipse(-bw * 0.95, by - bh * 0.3, 2.2 * sc, 3.2 * sc, 0.4, 0, TAU); ctx.fill();
+    // neck and head, lowered to graze
+    const na = -1.15 + d.head * 1.9, nx = bw * 0.75, ny = by - bh * 0.4, nl = h * 0.36;
+    const hx = nx + Math.cos(na) * nl, hy = ny + Math.sin(na) * nl;
+    ctx.strokeStyle = c1; ctx.lineWidth = 5 * sc;
+    ctx.beginPath(); ctx.moveTo(nx - 2 * sc, ny + 3 * sc); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.fillStyle = c1;
+    ctx.beginPath(); ctx.ellipse(hx + 3 * sc, hy + 1 * sc, 5.5 * sc, 3 * sc, 0.35 + d.head * 0.9, 0, TAU); ctx.fill();
+    ctx.fillStyle = c2;
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(hx - 1 * sc + s * 1.5 * sc, hy - 4 * sc, 1.5 * sc, 3.5 * sc, -0.5 + s * 0.3, 0, TAU); ctx.fill(); }
+    ctx.restore();
+  }
+
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
@@ -1693,6 +1840,7 @@ void main() {
       ctx.restore();
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       drawBlossoms(dt);
+      drawLotuses();
     } else {
       // 2D fallback: painted water and drawn ripple rings
       ctx.save();
@@ -1713,8 +1861,10 @@ void main() {
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       drawRipples(dt);
       drawBlossoms(dt);
+      drawLotuses();
       drawGlints();
     }
+    drawDeer(dt);
     ctx.drawImage(rimC, 0, 0, W, H);
     drawWaterfall(dt);
     ctx.drawImage(fgC, 0, 0, W, H);
