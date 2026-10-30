@@ -21,7 +21,7 @@ Instructions for any coding agent (Claude, Cursor, Codex, Copilot, …) working 
 - Branch name: `feat/F<id>-<short-english-name>`, e.g. `feat/F3-falling-leaves`.
 - Put new code in its own commented section, tagged with the feature ID: `/* ---------- F3 leaves ---------- */`.
 - Follow the "技术约定" section of the PRD: CSS-pixel coordinates, the pond ellipse `pond {cx, cy, rx, ry}`, scale everything by `S`, use `inWater()`/`clampWater()`, Pointer Events only, `store.get/set` for localStorage (keys are prefixed `wishpond.`). There is no audio right now; do not add sound outside F6.
-- Follow the "美术方向" section of the PRD (sunlit forest ruins, jade water, warm light, 3/4 view). New visuals must use its palette and lighting.
+- Follow the "美术方向" section of the PRD (sunlit mossy ruins, clear emerald water with lily pads and small white flowers, see-through ripples, 3/4 view). New visuals must use its palette and lighting.
 - Game logic uses world coordinates; the water layer is squashed by `view.T`. Use `toScreen()` / `toWorldY()` when drawing on the screen layer. Pointer positions from `pos()` are already in world coordinates.
 - Keep the per-frame draw order in `frame()` intact; decide which layer your object belongs to (water layer or screen layer).
 - UI text in Chinese, code and comments in English.
