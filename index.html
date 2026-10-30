@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.7 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.8 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -214,7 +214,8 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       gg.putImageData(im, 0, 0);
     }
     g.save(); g.globalAlpha = a; g.globalCompositeOperation = op;
-    g.fillStyle = g.createPattern(grainC, 'repeat'); g.fillRect(0, 0, W, H); g.restore();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = g.createPattern(grainC, 'repeat'); g.fillRect(0, 0, g.canvas.width, g.canvas.height); g.restore();
   }
 
   const mixc = (a, b, f, al = 1) => `rgba(${a.map((v, i) => Math.round(v + (b[i] - v) * f)).join(',')},${al})`;
@@ -256,88 +257,232 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       }
     }
   }
+  // src has the same pixel size as g's canvas
   function blurInto(g, src, px) {
     g.save();
-    if ('filter' in g && px > 0) g.filter = `blur(${px}px)`;
-    g.drawImage(src, 0, 0, W, H);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    if ('filter' in g && px > 0) g.filter = `blur(${px * DPR}px)`;
+    g.drawImage(src, 0, 0);
     g.restore();
   }
 
-  function paintBackground() {
-    const [c, g] = offscreen();
-    const sc = view.sc, R = rings();
-    // on tall screens the forest comes down to meet the pond instead of leaving an empty lawn
-    const wTop = pond.cy - pond.ry * view.T - view.wallH, top = Math.max(view.top, wTop - H * 0.28);
-    // bright mist deep in the forest
-    let gr = g.createLinearGradient(0, 0, 0, top);
-    gr.addColorStop(0, '#e9f0cf'); gr.addColorStop(0.55, '#c6d8a6'); gr.addColorStop(1, '#91aa72');
-    g.fillStyle = gr; g.fillRect(0, 0, W, top + 2);
-    gr = g.createRadialGradient(W * 0.42, top * 0.3, 0, W * 0.42, top * 0.3, Math.max(W, top) * 0.7);
-    gr.addColorStop(0, 'rgba(255,252,222,0.85)'); gr.addColorStop(1, 'rgba(255,252,222,0)');
-    g.fillStyle = gr; g.fillRect(0, 0, W, top + 2);
-    // receding rows of trees: each row further back is thinner, paler and softer
-    const rows = [
-      { n: W / 14, w: [3, 8], base: top * 0.5, fog: 0.78, blur: 3.5, col: [86, 104, 74] },
-      { n: W / 22, w: [6, 13], base: top * 0.64, fog: 0.58, blur: 2.4, col: [72, 88, 60] },
-      { n: W / 40, w: [11, 22], base: top * 0.8, fog: 0.36, blur: 1.4, col: [58, 70, 48] },
-    ];
-    view.deerY = top * 0.66;
-    for (const L of rows) {
-      const [lc, lg] = offscreen();
-      // canopy
-      for (let i = 0; i < W / 16; i++) {
-        const x = srnd(-30, W + 30), y = srnd(-30, top * 0.22), r = srnd(20, 50) * sc;
-        for (let k = 0; k < 14; k++) {
-          const a = srnd(0, TAU), d = Math.sqrt(srnd(0, 1)) * r, lr = srnd(0.12, 0.24) * r;
-          lg.fillStyle = mixc(srnd(0, 1) < 0.4 ? [150, 190, 80] : [62, 98, 42], FOG, L.fog);
-          lg.beginPath(); lg.ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d, lr, lr * 0.6, srnd(0, TAU), 0, TAU); lg.fill();
-        }
+  // The scene behind the pond is a stack of depth layers. With WebGL each layer is its own DOM canvas and the
+  // camera drifts (mouse on desktop, tilt on phones), so far layers slide more than near ones. bgC is the flat
+  // composite, used by the 2D fallback and for the water's reflection.
+  const cam = { x: 0, hover: null, tilt: null, M: 0 };
+  let layers = [], layerEls = [];
+  function layerCanvas(h) {
+    const M = cam.M, c = document.createElement('canvas');
+    c.width = Math.round((W + 2 * M) * DPR); c.height = Math.round(h * DPR);
+    const g = c.getContext('2d'); g.setTransform(DPR, 0, 0, DPR, M * DPR, 0);
+    return [c, g];
+  }
+  function treeRow(g, L, top, X0, X1) {
+    const sc = view.sc;
+    for (let i = 0; i < (X1 - X0) / 16; i++) {
+      const x = srnd(X0 - 30, X1 + 30), y = srnd(-30, top * 0.22), r = srnd(20, 50) * sc;
+      for (let k = 0; k < 14; k++) {
+        const a = srnd(0, TAU), d = Math.sqrt(srnd(0, 1)) * r, lr = srnd(0.12, 0.24) * r;
+        g.fillStyle = mixc(srnd(0, 1) < 0.4 ? [150, 190, 80] : [62, 98, 42], FOG, L.fog);
+        g.beginPath(); g.ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d, lr, lr * 0.6, srnd(0, TAU), 0, TAU); g.fill();
       }
-      // trunks, lit on the left
-      for (let i = 0; i < L.n; i++) {
-        const x = srnd(0, W), w = srnd(L.w[0], L.w[1]) * sc, b = L.base + srnd(0, 6) * sc;
-        if (L.fog < 0.5 && Math.abs(x - pond.cx) < W * 0.08) continue;
-        const tg = lg.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
-        tg.addColorStop(0, mixc(L.col.map(v => v * 1.5), FOG, L.fog)); tg.addColorStop(0.4, mixc(L.col, FOG, L.fog)); tg.addColorStop(1, mixc(L.col.map(v => v * 0.55), FOG, L.fog));
-        lg.fillStyle = tg;
-        lg.beginPath(); lg.moveTo(x - w * 0.35, -10); lg.lineTo(x + w * 0.35, -10);
-        lg.lineTo(x + w * 0.5, b - w * 0.4); lg.quadraticCurveTo(x + w * 0.9, b, x + w * 1.1, b);
-        lg.lineTo(x - w * 1.1, b); lg.quadraticCurveTo(x - w * 0.9, b, x - w * 0.5, b - w * 0.4); lg.closePath(); lg.fill();
-        if (srnd(0, 1) < 0.6) {
-          lg.fillStyle = mixc([110, 150, 60], FOG, L.fog, 0.7);
-          lg.fillRect(x - w * 0.5, b - srnd(10, 40) * sc, w * 0.5, srnd(8, 30) * sc);
-        }
-      }
-      // forest floor and undergrowth for this row
-      gr = lg.createLinearGradient(0, L.base - 6 * sc, 0, top);
-      gr.addColorStop(0, mixc([70, 96, 50], FOG, L.fog, 0)); gr.addColorStop(0.15, mixc([70, 96, 50], FOG, L.fog, 0.9)); gr.addColorStop(1, mixc([70, 96, 50], FOG, L.fog * 0.8, 1));
-      lg.fillStyle = gr; lg.fillRect(0, L.base - 6 * sc, W, top - L.base + 8);
-      for (let i = 0; i < W / 4; i++) {
-        const x = srnd(-10, W + 10), r = srnd(5, 22) * sc, y = L.base + srnd(-3, 10) * sc;
-        lg.fillStyle = mixc(srnd(0, 1) < 0.5 ? [70, 108, 44] : [118, 156, 68], FOG, L.fog);
-        lg.beginPath(); lg.ellipse(x, y, r, r * srnd(0.4, 0.8), 0, Math.PI, TAU); lg.fill();
-      }
-      blurInto(g, lc, L.blur * sc);
-      // haze between rows
-      const hz = L.base + 40 * sc;
-      gr = g.createLinearGradient(0, 0, 0, hz);
-      gr.addColorStop(0, 'rgba(225,236,205,0.05)'); gr.addColorStop(L.base / hz, 'rgba(225,236,205,0.3)'); gr.addColorStop(1, 'rgba(225,236,205,0)');
-      g.fillStyle = gr; g.fillRect(0, 0, W, hz);
     }
-    // god rays through the trees
-    g.save(); g.globalCompositeOperation = 'screen';
-    for (let i = 0; i < 5; i++) {
-      const x = W * (0.15 + i * 0.17) + srnd(-20, 20), w = srnd(18, 46) * sc;
-      gr = g.createLinearGradient(0, 0, 0, top);
-      gr.addColorStop(0, 'rgba(255,250,210,0.28)'); gr.addColorStop(1, 'rgba(255,250,210,0)');
-      g.fillStyle = gr;
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w * 2.2 + top * 0.25, top); g.lineTo(x + w * 0.6 + top * 0.25, top); g.fill();
+    for (let i = 0; i < L.n * (X1 - X0) / W; i++) {
+      const x = srnd(X0, X1), w = srnd(L.w[0], L.w[1]) * sc, b = L.base + srnd(0, 6) * sc;
+      if (L.fog < 0.5 && Math.abs(x - pond.cx) < W * 0.08) continue;
+      const tg = g.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+      tg.addColorStop(0, mixc(L.col.map(v => v * 1.5), FOG, L.fog)); tg.addColorStop(0.4, mixc(L.col, FOG, L.fog)); tg.addColorStop(1, mixc(L.col.map(v => v * 0.55), FOG, L.fog));
+      g.fillStyle = tg;
+      g.beginPath(); g.moveTo(x - w * 0.35, -10); g.lineTo(x + w * 0.35, -10);
+      g.lineTo(x + w * 0.5, b - w * 0.4); g.quadraticCurveTo(x + w * 0.9, b, x + w * 1.1, b);
+      g.lineTo(x - w * 1.1, b); g.quadraticCurveTo(x - w * 0.9, b, x - w * 0.5, b - w * 0.4); g.closePath(); g.fill();
+      if (srnd(0, 1) < 0.6) {
+        g.fillStyle = mixc([110, 150, 60], FOG, L.fog, 0.7);
+        g.fillRect(x - w * 0.5, b - srnd(10, 40) * sc, w * 0.5, srnd(8, 30) * sc);
+      }
+    }
+    const gr = g.createLinearGradient(0, L.base - 6 * sc, 0, top + 30 * sc);
+    gr.addColorStop(0, mixc([70, 96, 50], FOG, L.fog, 0)); gr.addColorStop(0.12, mixc([70, 96, 50], FOG, L.fog, 0.9)); gr.addColorStop(1, mixc([70, 96, 50], FOG, L.fog * 0.8, 1));
+    g.fillStyle = gr; g.fillRect(X0, L.base - 6 * sc, X1 - X0, top - L.base + 36 * sc);
+    for (let i = 0; i < (X1 - X0) / 4; i++) {
+      const x = srnd(X0 - 10, X1 + 10), r = srnd(5, 22) * sc, y = L.base + srnd(-3, 10) * sc;
+      g.fillStyle = mixc(srnd(0, 1) < 0.5 ? [70, 108, 44] : [118, 156, 68], FOG, L.fog);
+      g.beginPath(); g.ellipse(x, y, r, r * srnd(0.4, 0.8), 0, Math.PI, TAU); g.fill();
+    }
+  }
+  function column(g, x, by, cw, ch, fog) {
+    const sc = view.sc;
+    g.fillStyle = mixc([10, 20, 8], FOG, fog, 0.3);
+    g.beginPath(); g.ellipse(x + cw * 0.4, by, cw * 1.1, cw * 0.28, 0, 0, TAU); g.fill();
+    const gr = g.createLinearGradient(x - cw / 2, 0, x + cw / 2, 0);
+    gr.addColorStop(0, mixc([206, 204, 180], FOG, fog)); gr.addColorStop(0.45, mixc([150, 150, 128], FOG, fog)); gr.addColorStop(1, mixc([70, 74, 60], FOG, fog));
+    g.fillStyle = gr;
+    g.beginPath(); g.moveTo(x - cw / 2, by); g.lineTo(x - cw / 2, by - ch);
+    g.lineTo(x - cw * 0.15, by - ch - srnd(4, 12) * sc); g.lineTo(x + cw * 0.1, by - ch + srnd(0, 6) * sc);
+    g.lineTo(x + cw / 2, by - ch - srnd(2, 8) * sc); g.lineTo(x + cw / 2, by); g.closePath(); g.fill();
+    g.strokeStyle = mixc([60, 64, 50], FOG, fog, 0.35); g.lineWidth = 1;
+    for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(x - cw / 2 + k * cw / 4, by - 2); g.lineTo(x - cw / 2 + k * cw / 4, by - ch + 4 * sc); g.stroke(); }
+    g.fillStyle = mixc([196, 194, 170], FOG, fog);
+    g.fillRect(x - cw * 0.7, by - 7 * sc, cw * 1.4, 7 * sc);
+    g.fillStyle = mixc([110, 150, 58], FOG, fog, 0.75);
+    for (let k = 0; k < 5; k++) { g.beginPath(); g.ellipse(x + srnd(-cw / 2, cw / 2), by - srnd(0, ch), srnd(3, 7) * sc, srnd(2, 5) * sc, 0, 0, TAU); g.fill(); }
+  }
+  // a crumbling mossy wall with the arch the waterfall pours out of
+  function ruins(g, ax, ly, aw, span, fog) {
+    const sc = view.sc, ah = Math.max(50, aw * 1.15), wh = ah * 0.8, base = ly + 8 * sc;
+    const top = x => base - wh * (0.45 + 0.55 * Math.max(0, 1 - Math.abs(x - ax) / span)) - Math.abs(Math.sin(x * 0.09)) * 10 * sc;
+    g.beginPath(); g.moveTo(ax - span, base);
+    for (let x = ax - span; x <= ax + span; x += 6 * sc) g.lineTo(x, top(x) + (Math.floor(x / (14 * sc)) % 2) * 5 * sc);
+    g.lineTo(ax + span, base); g.closePath();
+    let gr = g.createLinearGradient(0, base - wh, 0, base);
+    gr.addColorStop(0, mixc([150, 154, 130], FOG, fog)); gr.addColorStop(1, mixc([70, 76, 60], FOG, fog));
+    g.fillStyle = gr; g.fill();
+    g.save(); g.clip();
+    const bh = 13 * sc;
+    for (let y = base - wh - bh, r = 0; y < base; y += bh, r++) {
+      for (let x = ax - span - srnd(0, 30) * sc; x < ax + span; ) {
+        const bw = srnd(22, 40) * sc, v = srnd(-14, 14);
+        g.fillStyle = mixc([132 + v, 138 + v, 116 + v], FOG, fog, 0.55); g.fillRect(x + 1, y + 1, bw - 2, bh - 2);
+        g.strokeStyle = mixc([40, 46, 34], FOG, fog, 0.4); g.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+        x += bw;
+      }
+    }
+    gr = g.createLinearGradient(ax - span, 0, ax + span, 0);
+    gr.addColorStop(0, 'rgba(20,30,15,0.35)'); gr.addColorStop(0.4, 'rgba(20,30,15,0)'); gr.addColorStop(1, 'rgba(20,30,15,0.4)');
+    g.fillStyle = gr; g.fillRect(ax - span, base - wh - 20 * sc, span * 2, wh + 20 * sc);
+    for (let i = 0; i < span / 3; i++) {
+      g.fillStyle = mixc(srnd(0, 1) < 0.5 ? [110, 150, 56] : [150, 190, 80], FOG, fog, 0.6);
+      const x = ax + srnd(-span, span);
+      g.beginPath(); g.ellipse(x, top(x) + srnd(0, 14) * sc, srnd(5, 14) * sc, srnd(2, 5) * sc, 0, 0, TAU); g.fill();
+    }
+    // ivy hanging over the wall
+    for (let i = 0; i < span / 7; i++) {
+      const x0 = ax + srnd(-span, span), len = srnd(0.2, 0.8) * wh, y0 = top(x0);
+      if (Math.abs(x0 - ax) < aw * 0.6) continue;
+      for (let t = 0; t < len; t += 3.5 * sc) {
+        g.fillStyle = mixc([[44, 86, 38], [63, 117, 48], [120, 170, 60]][Math.floor(srnd(0, 3))], FOG, fog);
+        g.beginPath(); g.ellipse(x0 + Math.sin(t * 0.05) * 3 * sc + srnd(-3, 3) * sc, y0 + t, srnd(2.5, 5) * sc, srnd(1.6, 3.2) * sc, srnd(0, TAU), 0, TAU); g.fill();
+      }
     }
     g.restore();
-    // forest floor around the pond
+    // the arch, lit from beyond
+    const archPath = () => {
+      g.beginPath(); g.moveTo(ax - aw / 2, base); g.lineTo(ax - aw / 2, base - ah + aw / 2);
+      g.arc(ax, base - ah + aw / 2, aw / 2, Math.PI, 0); g.lineTo(ax + aw / 2, base); g.closePath();
+    };
+    g.save(); g.strokeStyle = mixc([176, 178, 152], FOG, fog); g.lineWidth = 12 * sc; archPath(); g.stroke(); g.restore();
+    g.strokeStyle = mixc([60, 66, 50], FOG, fog, 0.5); g.lineWidth = 1;
+    for (let i = 0; i <= 8; i++) {
+      const a = Math.PI + i / 8 * Math.PI, cy0 = base - ah + aw / 2;
+      g.beginPath(); g.moveTo(ax + Math.cos(a) * (aw / 2 - 6 * sc), cy0 + Math.sin(a) * (aw / 2 - 6 * sc));
+      g.lineTo(ax + Math.cos(a) * (aw / 2 + 6 * sc), cy0 + Math.sin(a) * (aw / 2 + 6 * sc)); g.stroke();
+    }
+    gr = g.createLinearGradient(0, base - ah, 0, base);
+    gr.addColorStop(0, '#f6f9d8'); gr.addColorStop(0.6, '#cfe2a0'); gr.addColorStop(1, '#8fb066');
+    g.fillStyle = gr; archPath(); g.fill();
+    for (let i = 0; i < 6; i++) {
+      g.fillStyle = mixc([120, 150, 90], FOG, 0.5, 0.6);
+      const x = ax + srnd(-aw * 0.4, aw * 0.4), w = srnd(2, 5) * sc;
+      g.fillRect(x, base - ah * srnd(0.4, 0.9), w, ah);
+    }
+  }
+
+  function paintBackground() {
+    const sc = view.sc, R = rings();
+    cam.M = Math.ceil(24 * sc) + 4;
+    const M = cam.M, X0 = -M, X1 = W + M;
+    // on tall screens the forest comes down to meet the pond instead of leaving an empty lawn
+    const wTop = pond.cy - pond.ry * view.T - view.wallH, top = Math.max(view.top, wTop - H * 0.28);
+    const lh = Math.ceil(top + 40 * sc);
+    const portrait = H > W * 1.05;
+    layers = [];
+    const rows = [
+      { n: W / 14, w: [3, 8], base: top * 0.5, fog: 0.78, blur: 3.5, col: [86, 104, 74], depth: 1 },
+      { n: W / 22, w: [6, 13], base: top * 0.64, fog: 0.58, blur: 2.4, col: [72, 88, 60], depth: 0.72 },
+      { n: W / 40, w: [11, 22], base: top * 0.8, fog: 0.36, blur: 1.4, col: [58, 70, 48], depth: 0.48 },
+    ];
+    view.deerY = top * 0.66;
+    let gr, prevBase = 0;
+    rows.forEach((L, k) => {
+      const [c, g] = layerCanvas(lh);
+      if (k === 0) {
+        // bright mist deep in the forest
+        gr = g.createLinearGradient(0, 0, 0, lh);
+        gr.addColorStop(0, '#e9f0cf'); gr.addColorStop(0.55, '#c6d8a6'); gr.addColorStop(1, '#91aa72');
+        g.fillStyle = gr; g.fillRect(X0, 0, X1 - X0, lh);
+        gr = g.createRadialGradient(W * 0.42, top * 0.3, 0, W * 0.42, top * 0.3, Math.max(W, top) * 0.7);
+        gr.addColorStop(0, 'rgba(255,252,222,0.85)'); gr.addColorStop(1, 'rgba(255,252,222,0)');
+        g.fillStyle = gr; g.fillRect(X0, 0, X1 - X0, lh);
+      } else {
+        // haze over the rows behind this one
+        const hz = prevBase + 40 * sc;
+        gr = g.createLinearGradient(0, 0, 0, hz);
+        gr.addColorStop(0, 'rgba(225,236,205,0.05)'); gr.addColorStop(prevBase / hz, 'rgba(225,236,205,0.3)'); gr.addColorStop(1, 'rgba(225,236,205,0)');
+        g.fillStyle = gr; g.fillRect(X0, 0, X1 - X0, hz);
+      }
+      const [tc, tg] = layerCanvas(lh);
+      treeRow(tg, L, top, X0, X1);
+      if (k === 2) {
+        const xs = portrait ? [0.14, 0.86] : [0.2, 0.31, 0.72, 0.83];
+        for (const f of xs) column(tg, W * f + srnd(-8, 8), L.base + srnd(2, 10) * sc, 16 * sc, (top * 0.8) * srnd(0.3, 0.55), L.fog * 0.8);
+      }
+      blurInto(g, tc, L.blur * sc);
+      layers.push({ c, depth: L.depth, h: lh });
+      prevBase = L.base;
+    });
+    // big trunks close by, framing the clearing
+    {
+      const [c, g] = layerCanvas(lh);
+      const hz = prevBase + 40 * sc;
+      gr = g.createLinearGradient(0, 0, 0, hz);
+      gr.addColorStop(0, 'rgba(225,236,205,0.04)'); gr.addColorStop(prevBase / hz, 'rgba(225,236,205,0.22)'); gr.addColorStop(1, 'rgba(225,236,205,0)');
+      g.fillStyle = gr; g.fillRect(X0, 0, X1 - X0, hz);
+      const [tc, tg] = layerCanvas(lh);
+      const trunks = portrait ? [[-0.03, 46], [1.03, 50]] : [[-0.01, 70], [0.09, 30], [0.92, 34], [1.01, 76]];
+      for (const [f, w0] of trunks) {
+        const x = W * f, w = w0 * sc, b = top + 30 * sc;
+        const tgr = tg.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+        tgr.addColorStop(0, '#7d846a'); tgr.addColorStop(0.35, '#4f5842'); tgr.addColorStop(1, '#1f271a');
+        tg.fillStyle = tgr;
+        tg.beginPath(); tg.moveTo(x - w * 0.42, -10); tg.lineTo(x + w * 0.42, -10);
+        tg.lineTo(x + w * 0.5, b - w * 0.6); tg.quadraticCurveTo(x + w * 0.8, b, x + w * 1.3, b);
+        tg.lineTo(x - w * 1.3, b); tg.quadraticCurveTo(x - w * 0.8, b, x - w * 0.5, b - w * 0.6); tg.closePath(); tg.fill();
+        tg.strokeStyle = 'rgba(15,20,10,0.35)'; tg.lineWidth = 1.2;
+        for (let k = 0; k < w / 5; k++) {
+          const bx = x + srnd(-w * 0.4, w * 0.4), y0 = srnd(-10, b - w), len = srnd(30, 120) * sc;
+          tg.beginPath(); tg.moveTo(bx, y0); tg.quadraticCurveTo(bx + srnd(-3, 3), y0 + len / 2, bx + srnd(-2, 2), y0 + len); tg.stroke();
+        }
+        for (let k = 0; k < 9; k++) {
+          const my = srnd(top * 0.3, b - 4), mw = srnd(0.3, 0.6) * w;
+          const mg = tg.createRadialGradient(x - w * 0.15, my, 0, x - w * 0.15, my, mw);
+          mg.addColorStop(0, 'rgba(118,160,56,0.85)'); mg.addColorStop(1, 'rgba(118,160,56,0)');
+          tg.fillStyle = mg; tg.beginPath(); tg.ellipse(x - w * 0.15, my, mw, mw * 1.6, 0, 0, TAU); tg.fill();
+        }
+      }
+      grain(tg, 0.1, 'source-atop');
+      blurInto(g, tc, 0.8 * sc);
+      // god rays through the trees
+      g.save(); g.globalCompositeOperation = 'screen';
+      for (let i = 0; i < 5; i++) {
+        const x = W * (0.15 + i * 0.17) + srnd(-20, 20), w = srnd(18, 46) * sc;
+        gr = g.createLinearGradient(0, 0, 0, top);
+        gr.addColorStop(0, 'rgba(255,250,210,0.26)'); gr.addColorStop(1, 'rgba(255,250,210,0)');
+        g.fillStyle = gr;
+        g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w * 2.2 + top * 0.25, top); g.lineTo(x + w * 0.6 + top * 0.25, top); g.fill();
+      }
+      g.restore();
+      layers.push({ c, depth: 0.3, h: lh });
+    }
+    // the clearing itself: forest floor, ruins, rock pile, basin. It does not move.
+    const [c, g] = offscreen();
     gr = g.createLinearGradient(0, top, 0, H);
     gr.addColorStop(0, mixc([70, 96, 50], FOG, 0.3)); gr.addColorStop(0.4, '#4d6e30'); gr.addColorStop(1, '#25391a');
     g.fillStyle = gr; g.fillRect(0, top, W, H - top);
+    for (let i = 0; i < W / 3; i++) {
+      const x = srnd(-10, W + 10), r = srnd(5, 18) * sc, y = top + srnd(-2, 8) * sc;
+      g.fillStyle = mixc(srnd(0, 1) < 0.5 ? [64, 98, 40] : [108, 146, 62], FOG, 0.25);
+      g.beginPath(); g.ellipse(x, y, r, r * srnd(0.4, 0.8), 0, Math.PI, TAU); g.fill();
+    }
     for (let i = 0; i < W * H / 500; i++) {
       const x = srnd(0, W), y = srnd(top, H), f = (y - top) / (H - top), r = srnd(2, 7) * sc * (0.5 + f);
       g.fillStyle = srnd(0, 1) < 0.5 ? `rgba(130,170,62,${0.12 + f * 0.1})` : `rgba(30,52,20,${0.12 + f * 0.14})`;
@@ -356,10 +501,14 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       g.beginPath(); g.ellipse(x, y, l, l * 0.4, a, 0, TAU); g.fill();
     }
     grain(g, 0.05);
-    // mossy rock pile behind the pond with the waterfall, plus stones and ferns heaped around the pond
+    // mossy rock pile behind the pond; the waterfall pours out of the arch on top of it
     const ow = Math.max(150, Math.min(340, W * 0.3)), ly = Math.max(top * 0.72, wTop - Math.max(100, H * 0.13));
     fall.x = pond.cx; fall.w = Math.max(34, ow * 0.2); fall.y1 = ly + 4 * sc; fall.y2 = wTop + 6 * sc;
+    const span = Math.min(W * 0.42, ow * (portrait ? 0.85 : 1.05));
+    ruins(g, pond.cx, ly, fall.w * 1.7, span, 0.16);
     const pile = [];
+    // rubble along the foot of the wall
+    for (let x = pond.cx - span; x <= pond.cx + span; x += srnd(14, 30) * sc) pile.push({ x, y: ly + srnd(8, 16) * sc, w: srnd(22, 42) * sc });
     for (let i = 0; i < 36; i++) {
       const t = Math.pow(srnd(0, 1), 1.3), y = ly + 8 * sc + (wTop - ly - 8 * sc) * t;
       const spread = ow * (0.35 + t * 0.4);
@@ -371,11 +520,11 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       if (Math.abs(x - pond.cx) < ow * 0.5) continue;
       pile.push({ x, y, w: srnd(26, 60) * sc });
     }
-    // the stones the water spills between
-    for (const s of [-1, 1]) pile.push({ x: fall.x + s * fall.w * 0.95, y: ly + 4 * sc, w: fall.w * 1.3 });
+    for (const s of [-1, 1]) pile.push({ x: fall.x + s * fall.w * 1.15, y: ly + 10 * sc, w: fall.w * 1.2 });
     pile.sort((p, q) => p.y - q.y);
     const [pc, pg] = offscreen();
     for (const st of pile) {
+      if (Math.abs(st.x - fall.x) < fall.w * 0.5 && st.y < ly + 20 * sc) continue;
       const fog = Math.max(0, Math.min(0.35, (top - st.y) / top));
       boulder(pg, st.x, st.y, st.w, st.w * srnd(0.5, 0.66), fog, 0.8);
       pg.strokeStyle = 'rgba(140,180,80,0.7)'; pg.lineWidth = 1;
@@ -383,13 +532,30 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     }
     grain(pg, 0.14, 'source-atop');
     blurInto(g, pc, 0.6 * sc);
-    // basin wall
+    // a broken column or two in the clearing, where the screen has room
+    if (!portrait && W > 900) for (const f of [0.1, 0.9]) column(g, W * f, top + 46 * sc, 22 * sc, 110 * sc, 0.05);
     ell(g, R.basin);
     gr = g.createLinearGradient(0, R.basin[1] - R.basin[3], 0, R.basin[1]);
     gr.addColorStop(0, '#3a4630'); gr.addColorStop(1, '#16261a');
     g.fillStyle = gr; g.fill();
-    return c;
+    layers.push({ c, depth: 0, h: H, full: true });
+    // flat composite
+    const [bc, bg] = offscreen();
+    bg.setTransform(1, 0, 0, 1, 0, 0);
+    for (const L of layers) bg.drawImage(L.c, L.full ? 0 : -M * DPR, 0);
+    return bc;
   }
+  // camera drift: slow sway, the mouse on desktop, the tilt of a phone
+  function updateCam(dt) {
+    let target = Math.sin(tNow * 0.11) * 0.45;
+    if (cam.tilt != null) target = cam.tilt;
+    else if (cam.hover != null) target = target * 0.3 + cam.hover * 0.8;
+    cam.x += (target - cam.x) * Math.min(1, dt * 1.6);
+    if (!gl) return;
+    const A = 22 * view.sc;
+    for (const L of layers) if (L.depth && L.el) L.el.style.transform = `translate3d(${(cam.x * A * L.depth).toFixed(2)}px,0,0)`;
+  }
+  window.addEventListener('deviceorientation', e => { if (e.gamma != null) cam.tilt = Math.max(-1, Math.min(1, e.gamma / 25)); });
 
   function paintRim() {
     const [c, g] = offscreen();
@@ -815,7 +981,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     if (lanterns.length > 12) lanterns.shift();
   }
   function lanternAt(x, y) {
-    for (let i = lanterns.length - 1; i >= 0; i--) if (Math.hypot(lanterns[i].x - x, lanterns[i].y - y) < 24 * S) return lanterns[i];
+    for (let i = lanterns.length - 1; i >= 0; i--) if (Math.hypot(lanterns[i].x - x, lanterns[i].y - y) < 36 * S) return lanterns[i];
     return null;
   }
   let hovered = null, labels = [];
@@ -833,21 +999,13 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.globalCompositeOperation = 'lighter';
-      const gr = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, 54 * S);
-      gr.addColorStop(0, `rgba(255,190,100,${0.4 * flick})`); gr.addColorStop(1, 'rgba(255,190,100,0)');
-      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(l.x, l.y, 54 * S, 0, TAU); ctx.fill();
+      const gr = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, 90 * S);
+      gr.addColorStop(0, `rgba(255,196,110,${0.42 * flick})`); gr.addColorStop(1, 'rgba(255,196,110,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(l.x, l.y, 90 * S, 0, TAU); ctx.fill();
       ctx.globalCompositeOperation = 'source-over';
-      const rot = l.age * 0.15 + l.ph;
-      for (const [n, pr, col] of [[8, 15, '#d9455f'], [6, 10, '#f3a0b0']]) {
-        ctx.fillStyle = col;
-        for (let j = 0; j < n; j++) {
-          const a = rot + j / n * TAU + (n === 6 ? 0.3 : 0);
-          ctx.beginPath(); ctx.ellipse(l.x + Math.cos(a) * pr * 0.55 * S, l.y + Math.sin(a) * pr * 0.55 * S, pr * 0.6 * S, pr * 0.28 * S, a, 0, TAU); ctx.fill();
-        }
-      }
-      ctx.fillStyle = `rgba(255,243,196,${flick})`;
-      ctx.beginPath(); ctx.arc(l.x, l.y, 4 * S, 0, TAU); ctx.fill();
-      if (l.label > 0 || l === hovered) labels.push([l.text, l.x, l.y - 26 * S, alpha * Math.min(1, l === hovered ? 1 : l.label / 0.6)]);
+      const bob = waveAt(l.x, l.y) * 1.6 * S / view.T;
+      lotusQ.push([l.x, l.y + bob, 40 * S, l.age * 0.12 + l.ph, flick, alpha]);
+      if (l.label > 0 || l === hovered) labels.push([l.text, l.x, l.y - 70 * S, alpha * Math.min(1, l === hovered ? 1 : l.label / 0.6)]);
       ctx.restore();
     }
   }
@@ -1321,7 +1479,8 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       if (l.flower) lotusQ.push([bx - Math.cos(rot) * l.r * 0.25, by - Math.sin(rot) * l.r * 0.25, l.r, rot]);
     }
   }
-  function petal(bx, by, tx, ty, wd, front, ring) {
+  // lit: candle brightness for a lantern petal, 0 for a flower in daylight
+  function petal(bx, by, tx, ty, wd, front, lit = 0) {
     const mx = (bx + tx) / 2, my = (by + ty) / 2, dx = tx - bx, dy = ty - by, L = Math.hypot(dx, dy) || 1;
     const px = -dy / L * wd, py = dx / L * wd;
     ctx.beginPath();
@@ -1329,10 +1488,15 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     ctx.bezierCurveTo(bx + px * 0.9, by + py * 0.9, mx + px * 1.1, my + py * 1.1, tx, ty);
     ctx.bezierCurveTo(mx - px * 1.1, my - py * 1.1, bx - px * 0.9, by - py * 0.9, bx, by);
     const g = ctx.createLinearGradient(bx, by, tx, ty);
-    if (front) { g.addColorStop(0, '#d8cfc3'); g.addColorStop(0.55, '#f6efe9'); g.addColorStop(1, '#ee9fb6'); }
+    if (lit) {
+      // paper petals glowing from the candle inside: warm at the base, white at the tip
+      const w = Math.round(200 + 40 * lit);
+      if (front) { g.addColorStop(0, `rgb(255,${w},150)`); g.addColorStop(0.5, '#fff1d6'); g.addColorStop(1, '#fbfaf4'); }
+      else { g.addColorStop(0, `rgb(255,${w - 20},120)`); g.addColorStop(0.45, '#ffe8bd'); g.addColorStop(1, '#fffdf6'); }
+    } else if (front) { g.addColorStop(0, '#d8cfc3'); g.addColorStop(0.55, '#f6efe9'); g.addColorStop(1, '#ee9fb6'); }
     else { g.addColorStop(0, '#fff6e6'); g.addColorStop(0.6, '#fffdfa'); g.addColorStop(1, '#f6b5c7'); }
     ctx.fillStyle = g; ctx.fill();
-    ctx.strokeStyle = front ? 'rgba(150,110,120,0.25)' : 'rgba(230,170,185,0.3)'; ctx.lineWidth = 0.6;
+    ctx.strokeStyle = lit ? 'rgba(196,136,78,0.5)' : front ? 'rgba(150,110,120,0.25)' : 'rgba(230,170,185,0.3)'; ctx.lineWidth = 0.6;
     ctx.stroke();
     ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(mx + px * 0.1, my + py * 0.1, tx, ty); ctx.stroke();
   }
@@ -1366,8 +1530,60 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     draw(front);
   }
   function drawLotuses() {
-    for (const [wx, wy, r, rot] of lotusQ) { const [x, y] = toScreen(wx, wy); drawLotus(x, y, r * 0.95, rot); }
+    for (const [wx, wy, r, rot, lit, alpha] of lotusQ) {
+      const [x, y] = toScreen(wx, wy);
+      if (lit) drawLotusLantern(x, y, r, rot, lit, alpha); else drawLotus(x, y, r * 0.95, rot);
+    }
     lotusQ = [];
+  }
+  /* ---------- F2 lotus lantern: white paper lotus on a leaf, lit from inside ---------- */
+  function drawLotusLantern(x, y, r, rot, lit, alpha) {
+    const T = view.T;
+    const rings = [[9, r * 1.0, r * 0.2, r * 0.3], [8, r * 0.76, r * 0.48, r * 0.26], [6, r * 0.48, r * 0.74, r * 0.22]];
+    const petals = [];
+    rings.forEach(([n, spread, lift, wd], k) => {
+      for (let i = 0; i < n; i++) {
+        const a = rot + i / n * TAU + k * 0.4, ca = Math.cos(a), sa = Math.sin(a);
+        petals.push({ k, sa, bx: x + ca * r * 0.12, by: y + sa * r * 0.12 * T, tx: x + ca * spread, ty: y + sa * spread * T - lift, wd });
+      }
+    });
+    const draw = list => { for (const p of list) petal(p.bx, p.by, p.tx, p.ty, p.wd, p.sa > 0.1, lit); };
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // warm reflection stretched down the water
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    let g = ctx.createRadialGradient(x, y + r * 0.6, 0, x, y + r * 0.6, r * 1.6);
+    g.addColorStop(0, `rgba(255,200,120,${0.35 * lit})`); g.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.6, r * 0.8, r * 1.6, 0, 0, TAU); ctx.fill();
+    ctx.translate(0, y * 2); ctx.scale(1, -1); ctx.globalAlpha = alpha * 0.28;
+    draw(petals.filter(p => p.k < 2 && p.sa > -0.2));
+    ctx.restore();
+    // leaf it rides on
+    ctx.fillStyle = 'rgba(0,18,10,0.35)';
+    ctx.beginPath(); ctx.ellipse(x + 2 * S, y + 3 * S, r * 1.2, r * 1.2 * T, 0, 0, TAU); ctx.fill();
+    g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.2, 0, x, y, r * 1.15);
+    g.addColorStop(0, '#5f8f34'); g.addColorStop(1, '#2c4a1c');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(x, y, r * 1.15, r * 1.15 * T, 0, 0, TAU); ctx.fill();
+    const back = petals.filter(p => p.sa <= 0.1).sort((p, q) => p.k - q.k || p.sa - q.sa);
+    const front = petals.filter(p => p.sa > 0.1).sort((p, q) => q.k - p.k || p.sa - q.sa);
+    draw(back);
+    // the candle
+    const cy = y - r * 0.28;
+    ctx.globalCompositeOperation = 'lighter';
+    g = ctx.createRadialGradient(x, cy, 0, x, cy, r * 0.7);
+    g.addColorStop(0, `rgba(255,236,170,${0.9 * lit})`); g.addColorStop(0.4, `rgba(255,190,90,${0.35 * lit})`); g.addColorStop(1, 'rgba(255,170,70,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, cy, r * 0.7, 0, TAU); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    draw(front);
+    // light coming through the petals and spilling around
+    ctx.globalCompositeOperation = 'lighter';
+    g = ctx.createRadialGradient(x, cy, 0, x, cy, r * 2.4);
+    g.addColorStop(0, `rgba(255,214,140,${0.22 * lit})`); g.addColorStop(1, 'rgba(255,214,140,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, cy, r * 2.4, 0, TAU); ctx.fill();
+    ctx.restore();
   }
   function drawFlying(dt) {
     for (let i = flying.length - 1; i >= 0; i--) {
@@ -1404,7 +1620,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   // into underC, and a fragment shader bends that picture through the surface normals. ?flat forces the 2D path.
   const water = { bx: 0, by: 0, bw: 1, bh: 1, gD: 1, nx: 0, ny: 0, cell: 1, h: null, p: null, mask: null, px: null, acc: 0, wakeT: 0, ambT: 1, pend: [] };
   // with WebGL the frame is three stacked canvases: static scenery, the water, then #pond for everything above the surface
-  const gcv = document.createElement('canvas'), bgEl = document.createElement('canvas');
+  const gcv = document.createElement('canvas');
   let gl = null, glp = null, tex = {};
   const VS = 'attribute vec2 aP;varying vec2 vUv;void main(){vUv=vec2(aP.x*.5+.5,.5-aP.y*.5);gl_Position=vec4(aP,0.,1.);}';
   const FS = `
@@ -1509,9 +1725,8 @@ void main() {
     });
     for (const n of ['uBox', 'uWorld', 'uScreen', 'uT', 'uS', 'uTime', 'uFarY']) tex[n] = gl.getUniformLocation(glp, n);
     gcv.addEventListener('webglcontextlost', e => { e.preventDefault(); gl = null; });
-    bgEl.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none';
     gcv.style.cssText = 'position:fixed;pointer-events:none';
-    cv.before(bgEl, gcv);
+    cv.before(gcv);
     return true;
   }
 
@@ -1524,8 +1739,13 @@ void main() {
     const pw = Math.max(2, Math.round(water.bw * water.gD)), ph = Math.max(2, Math.round(water.bh * water.gD));
     gcv.width = pw; gcv.height = ph;
     Object.assign(gcv.style, { left: water.bx + 'px', top: water.by + 'px', width: water.bw + 'px', height: water.bh + 'px' });
-    bgEl.width = cv.width; bgEl.height = cv.height;
-    bgEl.getContext('2d').drawImage(bgC, 0, 0);
+    for (const el of layerEls) el.remove();
+    layerEls = [];
+    for (const L of layers) {
+      const x = L.full ? 0 : -cam.M, w = L.full ? W : W + 2 * cam.M;
+      L.c.style.cssText = `position:fixed;top:0;left:${x}px;width:${w}px;height:${L.h}px;pointer-events:none;will-change:transform`;
+      L.el = L.c; gcv.before(L.c); layerEls.push(L.c);
+    }
     if (!water.underC) water.underC = document.createElement('canvas');
     water.underC.width = pw; water.underC.height = ph;
     water.uctx = water.underC.getContext('2d');
@@ -1790,7 +2010,7 @@ void main() {
       d.head += (want - d.head) * dt * 2.5;
       if (d.timer <= 0) { d.mode = 'walk'; d.dir = -d.dir; }
     }
-    const h = 42 * sc, gy = view.deerY, x = d.x, col = [150, 118, 82];
+    const h = 42 * sc, gy = view.deerY, x = d.x + (gl ? cam.x * 22 * sc * 0.72 : 0), col = [150, 118, 82];
     const c1 = mixc(col, FOG, 0.42), c2 = mixc(col.map(v => v * 0.7), FOG, 0.42), c3 = mixc([235, 225, 205], FOG, 0.35);
     ctx.save();
     ctx.translate(x, gy); ctx.scale(d.dir, 1);
@@ -1826,6 +2046,7 @@ void main() {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now; tNow += dt;
     for (const k of koi) updateKoi(k, dt);
+    updateCam(dt);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     if (gl) ctx.clearRect(0, 0, W, H); else ctx.drawImage(bgC, 0, 0, W, H);
     if (gl) {
@@ -1867,7 +2088,7 @@ void main() {
     drawDeer(dt);
     ctx.drawImage(rimC, 0, 0, W, H);
     drawWaterfall(dt);
-    ctx.drawImage(fgC, 0, 0, W, H);
+    ctx.drawImage(fgC, gl ? -cam.x * 22 * view.sc * 0.6 : 0, 0, W, H);
     for (const lb of labels) drawLabel(...lb);
     labels = [];
     drawAim(now);
@@ -1922,6 +2143,7 @@ void main() {
   });
   cv.addEventListener('pointermove', e => {
     const [x, y] = pos(e);
+    if (e.pointerType === 'mouse') cam.hover = (e.clientX / W - 0.5) * 2;
     if (!ptr.down || e.pointerId !== ptr.id) {
       if (e.pointerType === 'mouse') { hovered = lanternAt(x, y); cv.style.cursor = hovered ? 'pointer' : 'grab'; }
       return;
