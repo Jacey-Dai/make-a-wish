@@ -1,0 +1,991 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- 许愿池 v0.2 · see docs/PRD.md and AGENTS.md -->
+<title>许愿池</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@400;500&display=swap">
+<style>
+/* Layout: one full-screen pond seen from above, a quiet HUD floating at the corners. Single dusk look, both themes. */
+:root {
+  --ground: #1f2b22;
+  --ink: #f3ead6;
+  --ink-dim: rgba(243, 234, 214, 0.62);
+  --bronze: #d9a441;
+  --glass: rgba(14, 30, 30, 0.42);
+  --f-display: "ZCOOL XiaoWei", "STKaiti", "KaiTi", "Songti SC", serif;
+  --f-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; }
+body { background: var(--ground); color: var(--ink); font-family: var(--f-body); overflow: hidden; }
+#pond { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; outline: none; }
+.hud {
+  position: fixed; left: 0; right: 0; top: 0;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none; flex-wrap: wrap;
+}
+.brand h1 { margin: 0; font-family: var(--f-display); font-weight: 400; font-size: clamp(26px, 4.4vw, 40px); letter-spacing: 0.12em; text-shadow: 0 2px 12px rgba(0,0,0,.45); }
+.brand p { margin: 2px 0 0; font-size: 13px; color: var(--ink-dim); letter-spacing: 0.06em; }
+.side { display: flex; gap: 8px; align-items: center; pointer-events: auto; }
+.count {
+  display: flex; align-items: baseline; gap: 4px;
+  background: var(--glass); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(217, 164, 65, 0.35); border-radius: 999px; padding: 6px 14px;
+  font-variant-numeric: tabular-nums;
+}
+.count .label { font-size: 12px; color: var(--ink-dim); margin-right: 2px; }
+.count b { font-family: var(--f-display); font-weight: 400; font-size: 22px; color: var(--bronze); }
+.count small { font-size: 12px; color: var(--ink-dim); }
+#mute, #wishesBtn {
+  font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+  background: var(--glass); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(243, 234, 214, 0.2); border-radius: 999px; padding: 8px 12px;
+}
+#mute:focus-visible, #wishesBtn:focus-visible, #pond:focus-visible, .wish button:focus-visible, .wish input:focus-visible, .drawer button:focus-visible { outline: 2px solid var(--bronze); outline-offset: 2px; }
+.hint {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  font-size: 14px; letter-spacing: 0.08em; color: var(--ink);
+  background: var(--glass); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border-radius: 999px; padding: 8px 16px; pointer-events: none; text-align: center;
+  max-width: calc(100% - 32px); width: max-content;
+  transition: opacity .8s ease;
+}
+.hint.gone, .toast.gone { opacity: 0; }
+.toast {
+  position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%);
+  background: rgba(10, 24, 26, 0.72); color: var(--ink); font-size: 14px; letter-spacing: .06em;
+  border-radius: 999px; padding: 8px 16px; pointer-events: none; transition: opacity .5s ease;
+  max-width: calc(100% - 32px); text-align: center;
+}
+.wish {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: min(420px, calc(100% - 32px));
+  display: flex; flex-direction: column; gap: 10px;
+  background: rgba(12, 28, 30, 0.82); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(217, 164, 65, 0.4); border-radius: 18px; padding: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.35);
+}
+.wish label { font-family: var(--f-display); font-size: 20px; letter-spacing: .1em; color: var(--bronze); }
+.wish .row { display: flex; gap: 8px; }
+.wish input {
+  flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--ink);
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(243,234,214,0.25); border-radius: 10px; padding: 10px 12px;
+}
+.wish input::placeholder { color: var(--ink-dim); }
+.wish button[type="submit"] {
+  font: inherit; font-size: 15px; cursor: pointer; color: #2a1a05; background: var(--bronze);
+  border: 0; border-radius: 10px; padding: 10px 16px; white-space: nowrap;
+}
+.wish .meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--ink-dim); }
+.link { font: inherit; font-size: 13px; color: var(--ink-dim); background: none; border: 0; cursor: pointer; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; }
+.drawer {
+  position: fixed; right: 0; top: 0; bottom: 0; width: min(340px, 100%);
+  background: rgba(12, 26, 28, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-left: 1px solid rgba(243,234,214,0.12);
+  padding-top: calc(18px + env(safe-area-inset-top, 0px)); padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  padding-left: 20px; padding-right: max(20px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 14px; overflow-y: auto;
+}
+.drawer header { display: flex; justify-content: space-between; align-items: center; }
+.drawer h2 { margin: 0; font-family: var(--f-display); font-weight: 400; font-size: 24px; letter-spacing: .1em; }
+.drawer ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.drawer li { border-bottom: 1px solid rgba(243,234,214,0.1); padding-bottom: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.drawer time { display: block; font-size: 12px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.drawer .empty { color: var(--ink-dim); line-height: 1.7; }
+@media (max-width: 520px) { .brand p { display: none; } }
+</style>
+
+<canvas id="pond" tabindex="0" aria-label="许愿池：按住往上甩投铜钱，轻点水面触水，按空格随机投"></canvas>
+<div class="hud">
+  <div class="brand">
+    <h1>许愿池</h1>
+    <p>把铜钱投进池心的石碗，许一个愿</p>
+  </div>
+  <div class="side">
+    <div class="count" aria-live="polite"><span class="label">已投</span><b id="n">0</b><small>枚 · 投中</small><b id="hits">0</b></div>
+    <button id="wishesBtn" type="button">我的愿望</button>
+    <button id="mute" type="button" aria-pressed="false">声音 开</button>
+  </div>
+</div>
+<div class="hint" id="hint">按住往上甩，投一枚铜钱；轻点水面，看看锦鲤</div>
+<div class="toast gone" id="toast" role="status"></div>
+<form class="wish" id="wish" hidden>
+  <label for="wishText">投中了，写下你的愿望</label>
+  <div class="row">
+    <input id="wishText" maxlength="40" placeholder="比如：明年去看海" autocomplete="off" enterkeyhint="send">
+    <button type="submit">放灯</button>
+  </div>
+  <div class="meta"><span id="wishLen">0 / 40</span><button type="button" class="link" id="wishSkip">先不写</button></div>
+</form>
+<aside class="drawer" id="wishes" hidden aria-label="我的愿望">
+  <header><h2>我的愿望</h2><button type="button" class="link" id="wishesClose">关闭</button></header>
+  <ol id="wishList"></ol>
+</aside>
+
+<script>
+(() => {
+  const cv = document.getElementById('pond');
+  const ctx = cv.getContext('2d');
+  const nEl = document.getElementById('n');
+  const hint = document.getElementById('hint');
+  const muteBtn = document.getElementById('mute');
+  const hitsEl = document.getElementById('hits');
+  const toastEl = document.getElementById('toast');
+  const wishForm = document.getElementById('wish');
+  const wishInput = document.getElementById('wishText');
+  const wishLen = document.getElementById('wishLen');
+  const wishesBtn = document.getElementById('wishesBtn');
+  const wishesEl = document.getElementById('wishes');
+  const wishList = document.getElementById('wishList');
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const TAU = Math.PI * 2;
+  const wrap = a => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
+
+  let W = 0, H = 0, DPR = 1, S = 1;
+  const pond = { cx: 0, cy: 0, rx: 1, ry: 1, m: 40 };
+  let stones = [], pebbles = [], lilies = [], koi = [], coins = [], flying = [], ripples = [], drops = [], glows = [];
+  let lanterns = [], floats = [];
+  const bowl = { x: 0, y: 0, R: 1 };
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('wishpond.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('wishpond.' + k, JSON.stringify(v)); } catch (e) {} },
+  };
+  let count = parseInt(store.get('count', 0), 10) || 0;
+  let hits = parseInt(store.get('hits', 0), 10) || 0;
+  nEl.textContent = count;
+  hitsEl.textContent = hits;
+
+  /* ---------- geometry ---------- */
+  function inWater(x, y, pad = 0) {
+    const a = (x - pond.cx) / Math.max(1, pond.rx - pad), b = (y - pond.cy) / Math.max(1, pond.ry - pad);
+    return a * a + b * b < 1;
+  }
+  function clampWater(x, y, pad = 0) {
+    if (inWater(x, y, pad)) return [x, y];
+    const dx = x - pond.cx, dy = y - pond.cy;
+    const a = Math.atan2(dy / (pond.ry - pad), dx / (pond.rx - pad));
+    return [pond.cx + Math.cos(a) * (pond.rx - pad) * 0.98, pond.cy + Math.sin(a) * (pond.ry - pad) * 0.98];
+  }
+  function randWater(pad) {
+    const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * 0.95;
+    return [pond.cx + Math.cos(a) * (pond.rx - pad) * r, pond.cy + Math.sin(a) * (pond.ry - pad) * r];
+  }
+
+  /* ---------- scenery ---------- */
+  function buildScenery() {
+    stones = [];
+    const ex = pond.rx + pond.m * 0.42, ey = pond.ry + pond.m * 0.42;
+    const per = Math.PI * (3 * (ex + ey) - Math.sqrt((3 * ex + ey) * (ex + 3 * ey)));
+    const n = Math.floor(per / (30 * S));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + rnd(-0.02, 0.02);
+      const r = rnd(15, 24) * S;
+      const pts = [];
+      const k = 8;
+      for (let j = 0; j < k; j++) pts.push(r * rnd(0.78, 1.08));
+      stones.push({ x: pond.cx + Math.cos(a) * ex + rnd(-3, 3) * S, y: pond.cy + Math.sin(a) * ey + rnd(-3, 3) * S, r, pts, rot: rnd(0, TAU), tone: rnd(-12, 12) });
+    }
+    stones.sort((a, b) => a.y - b.y);
+    pebbles = [];
+    for (let i = 0; i < 90; i++) {
+      const [x, y] = randWater(10);
+      pebbles.push({ x, y, r: rnd(2, 6) * S, rot: rnd(0, TAU), c: Math.random() < 0.5 ? '120,100,70' : '70,80,70' });
+    }
+  }
+
+  function makeLilies() {
+    lilies = [];
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + rnd(-0.3, 0.3);
+      const rr = rnd(0.55, 0.82);
+      lilies.push({
+        x: pond.cx + Math.cos(a) * pond.rx * rr, y: pond.cy + Math.sin(a) * pond.ry * rr,
+        r: rnd(20, 34) * S, rot: rnd(0, TAU), ph: rnd(0, TAU), flower: i === 1 || i === 3,
+      });
+    }
+  }
+
+  /* ---------- koi ---------- */
+  const KINDS = [
+    { name: 'kohaku', base: '#f5efe3', fin: 'rgba(245,239,227,0.55)', patches: ['#d6402a'] },
+    { name: 'kohaku', base: '#f7f1e6', fin: 'rgba(247,241,230,0.55)', patches: ['#e0522c'] },
+    { name: 'ogon', base: '#ef8a2c', fin: 'rgba(245,160,70,0.55)', patches: ['#f7b356'] },
+    { name: 'showa', base: '#1c1b1d', fin: 'rgba(40,40,44,0.6)', patches: ['#d5442c', '#f1eadc'] },
+    { name: 'shiro', base: '#f1ece2', fin: 'rgba(241,236,226,0.5)', patches: ['#22211f'] },
+    { name: 'ogon', base: '#e9b13d', fin: 'rgba(240,195,90,0.55)', patches: ['#f6d77a'] },
+  ];
+
+  function makeKoi(kind) {
+    const len = rnd(78, 104) * S;
+    const segs = 14;
+    const [x, y] = randWater(60 * S);
+    const heading = rnd(0, TAU);
+    const pts = [];
+    for (let i = 0; i < segs; i++) pts.push({ x: x - Math.cos(heading) * i * len / segs, y: y - Math.sin(heading) * i * len / segs });
+    const patches = [];
+    const np = kind.name === 'ogon' ? 2 : Math.floor(rnd(3, 6));
+    for (let i = 0; i < np; i++) {
+      patches.push({ seg: Math.floor(rnd(0, 10)), off: rnd(-0.6, 0.6), r: rnd(0.8, 1.5), c: kind.patches[Math.floor(Math.random() * kind.patches.length)] });
+    }
+    return {
+      kind, patches, len, segs, sp: len / segs, pts, heading, speed: rnd(20, 34) * S, phase: rnd(0, TAU),
+      mode: 'wander', target: randWater(60 * S), timer: 0, delay: 0, coin: null, bubbleT: 0,
+    };
+  }
+  function widthAt(k, i) {
+    const t = i / (k.segs - 1);
+    const w = t < 0.22 ? 0.78 + (t / 0.22) * 0.22 : 1 - ((t - 0.22) / 0.78) * 0.86;
+    return k.len * 0.125 * w;
+  }
+
+  function updateKoi(k, dt) {
+    const h = k.pts[0];
+    if (k.delay > 0) { k.delay -= dt; }
+    let wantSpeed = 28 * S, turn = 1.5;
+    if (k.mode === 'chase' && k.delay <= 0) {
+      wantSpeed = 120 * S; turn = 3.4;
+      k.timer -= dt;
+      if (Math.hypot(k.target[0] - h.x, k.target[1] - h.y) < 22 * S || k.timer <= 0) {
+        k.mode = 'nibble'; k.timer = rnd(1.4, 2.4);
+      }
+    } else if (k.mode === 'flee') {
+      wantSpeed = 150 * S; turn = 4;
+      k.timer -= dt;
+      if (Math.hypot(k.target[0] - h.x, k.target[1] - h.y) < 24 * S || k.timer <= 0) { k.mode = 'wander'; k.target = randWater(60 * S); }
+    } else if (k.mode === 'nibble') {
+      wantSpeed = 22 * S; turn = 2.6;
+      k.timer -= dt; k.bubbleT -= dt;
+      if (Math.hypot(k.target[0] - h.x, k.target[1] - h.y) < 10 * S) {
+        k.target = clampWater(k.coin[0] + rnd(-28, 28) * S, k.coin[1] + rnd(-28, 28) * S, 30 * S);
+      }
+      if (k.bubbleT <= 0) {
+        k.bubbleT = rnd(0.35, 0.7);
+        const fx = h.x + Math.cos(k.heading) * 4 * S, fy = h.y + Math.sin(k.heading) * 4 * S;
+        ripples.push({ x: fx, y: fy, r: 2 * S, max: rnd(14, 22) * S, life: 1, a: 0.5, w: 1 });
+      }
+      if (k.timer <= 0) { k.mode = 'wander'; k.target = randWater(60 * S); }
+    } else {
+      if (Math.hypot(k.target[0] - h.x, k.target[1] - h.y) < 30 * S || Math.random() < dt * 0.05) k.target = randWater(60 * S);
+    }
+    if (!inWater(h.x, h.y, 28 * S)) { k.target = [pond.cx + rnd(-40, 40) * S, pond.cy + rnd(-40, 40) * S]; }
+
+    const desired = Math.atan2(k.target[1] - h.y, k.target[0] - h.x);
+    const diff = wrap(desired - k.heading);
+    k.heading += Math.max(-turn * dt, Math.min(turn * dt, diff));
+    k.speed += (wantSpeed - k.speed) * Math.min(1, dt * (k.mode === 'chase' || k.mode === 'flee' ? 3.5 : 1.2));
+    k.phase += dt * (3 + k.speed / (12 * S));
+    const mv = k.heading + Math.sin(k.phase) * 0.28;
+    h.x += Math.cos(mv) * k.speed * dt;
+    h.y += Math.sin(mv) * k.speed * dt;
+    for (let i = 1; i < k.segs; i++) {
+      const a = k.pts[i - 1], b = k.pts[i];
+      const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy) || 1;
+      b.x = a.x - (dx / d) * k.sp; b.y = a.y - (dy / d) * k.sp;
+    }
+  }
+
+  function koiPath(k, ox = 0, oy = 0) {
+    const L = [], R = [], p = k.pts;
+    for (let i = 0; i < k.segs; i++) {
+      let ang;
+      if (i === 0) ang = Math.atan2(p[0].y - p[1].y, p[0].x - p[1].x);
+      else ang = Math.atan2(p[i - 1].y - p[i].y, p[i - 1].x - p[i].x);
+      const nx = -Math.sin(ang), ny = Math.cos(ang), w = widthAt(k, i);
+      L.push([p[i].x + nx * w + ox, p[i].y + ny * w + oy]);
+      R.push([p[i].x - nx * w + ox, p[i].y - ny * w + oy]);
+    }
+    const fa = Math.atan2(p[0].y - p[1].y, p[0].x - p[1].x), w0 = widthAt(k, 0);
+    const path = new Path2D();
+    path.moveTo(R[0][0], R[0][1]);
+    path.quadraticCurveTo(p[0].x + Math.cos(fa) * w0 * 2.1 + ox, p[0].y + Math.sin(fa) * w0 * 2.1 + oy, L[0][0], L[0][1]);
+    for (let i = 1; i < k.segs - 1; i++) path.quadraticCurveTo(L[i][0], L[i][1], (L[i][0] + L[i + 1][0]) / 2, (L[i][1] + L[i + 1][1]) / 2);
+    const e = k.segs - 1;
+    path.lineTo(L[e][0], L[e][1]);
+    path.lineTo(R[e][0], R[e][1]);
+    for (let i = e - 1; i > 0; i--) path.quadraticCurveTo(R[i][0], R[i][1], (R[i][0] + R[i - 1][0]) / 2, (R[i][1] + R[i - 1][1]) / 2);
+    path.lineTo(R[0][0], R[0][1]);
+    path.closePath();
+    return path;
+  }
+
+  function finsPath(k, ox = 0, oy = 0) {
+    const p = k.pts, e = k.segs - 1;
+    const path = new Path2D();
+    // tail
+    const back = Math.atan2(p[e].y - p[e - 1].y, p[e].x - p[e - 1].x) + Math.sin(k.phase - 1.2) * 0.38;
+    const tl = k.len * 0.26, tx = p[e].x + ox, ty = p[e].y + oy;
+    const t1 = [tx + Math.cos(back - 0.55) * tl, ty + Math.sin(back - 0.55) * tl];
+    const t2 = [tx + Math.cos(back + 0.55) * tl, ty + Math.sin(back + 0.55) * tl];
+    const notch = [tx + Math.cos(back) * tl * 0.6, ty + Math.sin(back) * tl * 0.6];
+    path.moveTo(tx, ty);
+    path.quadraticCurveTo(tx + Math.cos(back - 0.3) * tl * 0.7, ty + Math.sin(back - 0.3) * tl * 0.7, t1[0], t1[1]);
+    path.quadraticCurveTo(notch[0] + Math.cos(back - 1.2) * 3, notch[1] + Math.sin(back - 1.2) * 3, notch[0], notch[1]);
+    path.quadraticCurveTo(notch[0] + Math.cos(back + 1.2) * 3, notch[1] + Math.sin(back + 1.2) * 3, t2[0], t2[1]);
+    path.quadraticCurveTo(tx + Math.cos(back + 0.3) * tl * 0.7, ty + Math.sin(back + 0.3) * tl * 0.7, tx, ty);
+    // pectoral fins
+    const i = 3, ang = Math.atan2(p[i - 1].y - p[i].y, p[i - 1].x - p[i].x), w = widthAt(k, i);
+    for (const side of [-1, 1]) {
+      const flap = Math.sin(k.phase * 0.8 + (side > 0 ? 0 : 1.4)) * 0.3;
+      const fa = ang + Math.PI + side * (1.05 + flap);
+      const bx = p[i].x - Math.sin(ang) * w * side * 0.85 + ox, by = p[i].y + Math.cos(ang) * w * side * 0.85 + oy;
+      const fl = k.len * 0.13;
+      path.moveTo(bx, by);
+      path.ellipse(bx + Math.cos(fa) * fl * 0.5, by + Math.sin(fa) * fl * 0.5, fl * 0.55, fl * 0.24, fa, 0, TAU);
+    }
+    return path;
+  }
+
+  function drawKoiShadow(k) {
+    const off = 7 * S;
+    ctx.fillStyle = 'rgba(4,18,22,0.28)';
+    ctx.fill(koiPath(k, off, off * 1.3));
+    ctx.fill(finsPath(k, off, off * 1.3));
+  }
+  function drawKoi(k) {
+    const kind = k.kind;
+    ctx.fillStyle = kind.fin;
+    ctx.fill(finsPath(k));
+    const body = koiPath(k);
+    ctx.fillStyle = kind.base;
+    ctx.fill(body);
+    ctx.save();
+    ctx.clip(body);
+    const p = k.pts;
+    for (const pt of k.patches) {
+      const i = Math.min(pt.seg, k.segs - 2);
+      const ang = Math.atan2(p[i].y - p[i + 1].y, p[i].x - p[i + 1].x), w = widthAt(k, i);
+      const x = p[i].x - Math.sin(ang) * w * pt.off, y = p[i].y + Math.cos(ang) * w * pt.off;
+      ctx.fillStyle = pt.c;
+      ctx.beginPath();
+      ctx.ellipse(x, y, widthAt(k, 2) * pt.r, widthAt(k, 2) * pt.r * 0.8, ang, 0, TAU);
+      ctx.fill();
+    }
+    // dorsal sheen
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1.6 * S;
+    ctx.beginPath();
+    ctx.moveTo(p[1].x, p[1].y);
+    for (let i = 2; i < k.segs - 2; i++) ctx.lineTo(p[i].x, p[i].y);
+    ctx.stroke();
+    ctx.restore();
+    // eyes
+    const fa = Math.atan2(p[0].y - p[1].y, p[0].x - p[1].x), w0 = widthAt(k, 0);
+    ctx.fillStyle = '#121212';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(p[0].x + Math.cos(fa) * w0 * 0.55 - Math.sin(fa) * w0 * 0.62 * s, p[0].y + Math.sin(fa) * w0 * 0.55 + Math.cos(fa) * w0 * 0.62 * s, 1.5 * S, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  /* ---------- coins ---------- */
+  function drawCoin(x, y, r, spin, alpha = 1) {
+    // 方孔铜钱: round coin, square hole
+    const sx = Math.max(0.12, Math.abs(Math.cos(spin)));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.scale(sx, 1);
+    const g = ctx.createLinearGradient(-r, -r, r, r);
+    g.addColorStop(0, '#f6d27a'); g.addColorStop(0.5, '#d29a3a'); g.addColorStop(1, '#8e5f1e');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(90,55,15,0.75)'; ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.84, 0, TAU); ctx.stroke();
+    const hs = r * 0.3;
+    ctx.fillStyle = 'rgba(30,20,8,0.85)';
+    ctx.fillRect(-hs, -hs, hs * 2, hs * 2);
+    ctx.restore();
+  }
+
+  // from: release point of a flick; keyboard tosses start below the screen
+  function toss(tx, ty, from) {
+    [tx, ty] = clampWater(tx, ty, 18 * S);
+    const sx = from ? from[0] : W / 2 + (tx - W / 2) * 0.35 + rnd(-20, 20);
+    const sy = from ? from[1] : H + 30;
+    const dist = Math.hypot(tx - sx, ty - sy);
+    flying.push({ sx, sy, tx, ty, t: 0, dur: 0.6 + dist / 1800, arc: 90 * S + dist * 0.28, spin: rnd(0, TAU) });
+    sfx.ting();
+    if (!hint.classList.contains('gone')) hint.classList.add('gone');
+  }
+
+  function land(f) {
+    const { tx: x, ty: y } = f;
+    const bd = Math.hypot(x - bowl.x, y - bowl.y);
+    const hit = bd < bowl.R * 0.92;
+    let dx = rnd(-6, 6) * S, dy = rnd(-6, 6) * S;
+    if (hit) {
+      const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * bowl.R * 0.5;
+      dx = bowl.x + Math.cos(a) * r - x; dy = bowl.y + Math.sin(a) * r - y;
+    }
+    coins.push({ x, y, rot: rnd(0, TAU), age: 0, dx, dy });
+    if (coins.length > 240) coins.shift();
+    for (let i = 0; i < 3; i++) ripples.push({ x, y, r: 3 * S, max: (70 + i * 34) * S, life: 1, a: 0.75 - i * 0.18, w: 2 - i * 0.4, delay: i * 0.16 });
+    for (let i = 0; i < 16; i++) {
+      const a = rnd(0, TAU), v = rnd(30, 110) * S;
+      drops.push({ x, y, z: 0, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.8, vz: rnd(90, 220) * S, r: rnd(1.2, 2.8) * S });
+    }
+    glows.push({ x, y, life: 1, big: hit });
+    count++;
+    nEl.textContent = count;
+    store.set('count', count);
+    sfx.plop();
+    if (hit) {
+      hits++;
+      hitsEl.textContent = hits;
+      store.set('hits', hits);
+      glows.push({ x: bowl.x, y: bowl.y, life: 1.6, big: true });
+      floats.push({ text: '投中了', x: bowl.x, y: bowl.y - bowl.R - 10 * S, life: 1.8, size: 22, color: '255,214,120' });
+      sfx.chime();
+      setTimeout(openWish, 900);
+    } else if (bd < bowl.R * 2) {
+      floats.push({ text: '差一点', x, y: y - 24 * S, life: 1.3, size: 15, color: '243,234,214' });
+    }
+    // koi notice
+    const reach = Math.max(pond.rx, pond.ry) * 1.1;
+    for (const k of koi) {
+      const d = Math.hypot(k.pts[0].x - x, k.pts[0].y - y);
+      if (d < reach && Math.random() < 0.9) {
+        k.mode = 'chase';
+        k.coin = [x, y];
+        k.target = clampWater(x + rnd(-14, 14) * S, y + rnd(-14, 14) * S, 30 * S);
+        k.delay = 0.12 + d / (700 * S) + rnd(0, 0.25);
+        k.timer = 5;
+      }
+    }
+  }
+
+  /* ---------- F0 touch water ---------- */
+  function touchWater(x, y) {
+    if (!inWater(x, y)) return;
+    for (let i = 0; i < 2; i++) ripples.push({ x, y, r: 2 * S, max: (44 + i * 28) * S, life: 1, a: 0.55 - i * 0.15, w: 1.4 - i * 0.3, delay: i * 0.14 });
+    sfx.drip();
+    for (const k of koi) {
+      const h = k.pts[0], d = Math.hypot(h.x - x, h.y - y);
+      if (d > 150 * S) continue;
+      const a = Math.atan2(h.y - y, h.x - x);
+      k.mode = 'flee'; k.delay = 0; k.timer = rnd(1.6, 2.6);
+      k.target = clampWater(h.x + Math.cos(a) * 180 * S, h.y + Math.sin(a) * 180 * S, 40 * S);
+    }
+  }
+
+  /* ---------- F2 wishes and lanterns ---------- */
+  function launchLantern(text) {
+    lanterns.push({ x: bowl.x, y: bowl.y, a: rnd(0, TAU), v: 16 * S, text, age: 0, ph: rnd(0, TAU), label: 4, wake: 0 });
+    if (lanterns.length > 12) lanterns.shift();
+  }
+  function lanternAt(x, y) {
+    for (let i = lanterns.length - 1; i >= 0; i--) if (Math.hypot(lanterns[i].x - x, lanterns[i].y - y) < 24 * S) return lanterns[i];
+    return null;
+  }
+  let hovered = null, labels = [];
+  function drawLanterns(dt) {
+    for (let i = lanterns.length - 1; i >= 0; i--) {
+      const l = lanterns[i];
+      l.age += dt; l.label -= dt; l.wake -= dt;
+      if (l.age > 22) { lanterns.splice(i, 1); continue; }
+      if (!inWater(l.x, l.y, 36 * S)) l.v *= Math.pow(0.4, dt);
+      l.a += Math.sin(l.age * 0.4 + l.ph) * 0.15 * dt;
+      l.x += Math.cos(l.a) * l.v * dt; l.y += Math.sin(l.a) * l.v * dt;
+      if (l.wake <= 0 && l.v > 4 * S) { l.wake = 1.4; ripples.push({ x: l.x, y: l.y, r: 10 * S, max: 30 * S, life: 0.8, a: 0.3, w: 1 }); }
+      const alpha = Math.min(1, l.age / 0.8) * (l.age > 20 ? 1 - (l.age - 20) / 2 : 1);
+      const flick = 0.85 + Math.sin(tNow * 13 + l.ph) * 0.08 + Math.sin(tNow * 7.3) * 0.07;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, 54 * S);
+      gr.addColorStop(0, `rgba(255,190,100,${0.4 * flick})`); gr.addColorStop(1, 'rgba(255,190,100,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(l.x, l.y, 54 * S, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      const rot = l.age * 0.15 + l.ph;
+      for (const [n, pr, col] of [[8, 15, '#d9455f'], [6, 10, '#f3a0b0']]) {
+        ctx.fillStyle = col;
+        for (let j = 0; j < n; j++) {
+          const a = rot + j / n * TAU + (n === 6 ? 0.3 : 0);
+          ctx.beginPath(); ctx.ellipse(l.x + Math.cos(a) * pr * 0.55 * S, l.y + Math.sin(a) * pr * 0.55 * S, pr * 0.6 * S, pr * 0.28 * S, a, 0, TAU); ctx.fill();
+        }
+      }
+      ctx.fillStyle = `rgba(255,243,196,${flick})`;
+      ctx.beginPath(); ctx.arc(l.x, l.y, 4 * S, 0, TAU); ctx.fill();
+      if (l.label > 0 || l === hovered) labels.push([l.text, l.x, l.y - 26 * S, alpha * Math.min(1, l === hovered ? 1 : l.label / 0.6)]);
+      ctx.restore();
+    }
+  }
+  function drawLabel(text, x, y, a) {
+    ctx.save();
+    ctx.globalAlpha *= a;
+    ctx.font = '14px "Noto Sans SC", "PingFang SC", sans-serif';
+    const w = Math.min(ctx.measureText(text).width, W - 40) + 20, h = 28;
+    const bx = Math.max(10, Math.min(W - w - 10, x - w / 2));
+    ctx.fillStyle = 'rgba(10,24,26,0.78)';
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, y - h, w, h, 14) : ctx.rect(bx, y - h, w, h); ctx.fill();
+    ctx.fillStyle = '#f3ead6'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, bx + 10, y - h / 2 + 1, w - 20);
+    ctx.restore();
+  }
+  function drawFloats(dt) {
+    for (let i = floats.length - 1; i >= 0; i--) {
+      const f = floats[i];
+      f.life -= dt; f.y -= 18 * S * dt;
+      if (f.life <= 0) { floats.splice(i, 1); continue; }
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, f.life / 0.5);
+      ctx.font = `${f.size}px "ZCOOL XiaoWei", "STKaiti", serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 8;
+      ctx.fillStyle = `rgb(${f.color})`;
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.restore();
+    }
+  }
+
+  function openWish() {
+    wishForm.hidden = false;
+    hint.classList.add('gone');
+    wishInput.value = ''; wishLen.textContent = '0 / 40';
+    try { wishInput.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function closeWish() { wishForm.hidden = true; cv.focus({ preventScroll: true }); }
+  wishInput.addEventListener('input', () => { wishLen.textContent = `${wishInput.value.length} / 40`; });
+  wishForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const text = wishInput.value.trim().slice(0, 40);
+    if (!text) { wishInput.placeholder = '写一句再放灯吧'; wishInput.focus(); return; }
+    launchLantern(text);
+    const list = store.get('wishes', []);
+    list.unshift({ text, t: Date.now() });
+    store.set('wishes', list.slice(0, 20));
+    sfx.chime(0.5);
+    closeWish();
+  });
+  document.getElementById('wishSkip').addEventListener('click', closeWish);
+
+  function renderWishes() {
+    const list = store.get('wishes', []);
+    wishList.replaceChildren();
+    if (!list.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = '还没有愿望。把铜钱投进池心的石碗，就能写下一个。';
+      wishList.append(li);
+      return;
+    }
+    for (const w of list) {
+      const li = document.createElement('li');
+      const t = document.createElement('time');
+      const d = new Date(w.t);
+      t.dateTime = d.toISOString();
+      t.textContent = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      li.append(document.createTextNode(w.text), t);
+      wishList.append(li);
+    }
+  }
+  wishesBtn.addEventListener('click', () => { renderWishes(); wishesEl.hidden = !wishesEl.hidden; });
+  document.getElementById('wishesClose').addEventListener('click', () => { wishesEl.hidden = true; });
+
+  let toastTimer = 0;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.remove('gone');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.add('gone'), 1800);
+  }
+
+  /* ---------- sound (synthesised, starts on first click) ---------- */
+  const sfx = (() => {
+    let ac = null, muted = false;
+    const get = () => {
+      if (muted) return null;
+      if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+      if (ac.state === 'suspended') ac.resume();
+      return ac;
+    };
+    return {
+      setMuted(m) { muted = m; },
+      ting() {
+        const a = get(); if (!a) return;
+        const t = a.currentTime;
+        for (const [f, v] of [[2093, 0.05], [3136, 0.025]]) {
+          const o = a.createOscillator(), g = a.createGain();
+          o.frequency.value = f; o.type = 'sine';
+          g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+          o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.4);
+        }
+      },
+      drip() {
+        const a = get(); if (!a) return;
+        const t = a.currentTime;
+        const o = a.createOscillator(), g = a.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(rnd(900, 1200), t);
+        o.frequency.exponentialRampToValueAtTime(380, t + 0.09);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.12, t + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+        o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.16);
+      },
+      chime(vol = 1) {
+        const a = get(); if (!a) return;
+        const t = a.currentTime;
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+          const o = a.createOscillator(), g = a.createGain();
+          o.type = 'sine'; o.frequency.value = f;
+          const s = t + i * 0.09;
+          g.gain.setValueAtTime(0.0001, s);
+          g.gain.exponentialRampToValueAtTime(0.07 * vol, s + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001, s + 0.9);
+          o.connect(g).connect(a.destination); o.start(s); o.stop(s + 1);
+        });
+      },
+      plop() {
+        const a = get(); if (!a) return;
+        const t = a.currentTime;
+        const o = a.createOscillator(), g = a.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(rnd(520, 680), t);
+        o.frequency.exponentialRampToValueAtTime(120, t + 0.18);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.28, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+        o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.3);
+        const len = Math.floor(a.sampleRate * 0.25), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+        const n = a.createBufferSource(), f = a.createBiquadFilter(), ng = a.createGain();
+        n.buffer = buf; f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 0.8; ng.gain.value = 0.12;
+        n.connect(f).connect(ng).connect(a.destination); n.start(t);
+      },
+    };
+  })();
+  muteBtn.addEventListener('click', () => {
+    const m = muteBtn.getAttribute('aria-pressed') !== 'true';
+    muteBtn.setAttribute('aria-pressed', String(m));
+    muteBtn.textContent = m ? '声音 关' : '声音 开';
+    sfx.setMuted(m);
+  });
+
+  /* ---------- layout ---------- */
+  function layout() {
+    const old = { ...pond };
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    pond.m = Math.max(34, Math.min(W, H) * 0.075);
+    const hud = W < 520 ? 44 : 0; // the HUD wraps to two rows on phones
+    pond.cx = W / 2; pond.cy = H / 2 + Math.min(30, H * 0.03) + hud / 2;
+    pond.rx = W / 2 - pond.m * 1.15;
+    pond.ry = H / 2 - pond.m * 1.15 - Math.min(30, H * 0.03) - 34 - hud / 2;
+    S = Math.max(0.55, Math.min(1.25, Math.min(pond.rx, pond.ry) / 260));
+    bowl.x = pond.cx; bowl.y = pond.cy; bowl.R = Math.max(30, Math.min(pond.rx, pond.ry) * 0.17);
+    buildScenery();
+    if (!koi.length) {
+      makeLilies();
+      for (const kd of KINDS) koi.push(makeKoi(kd));
+    } else {
+      const mx = v => pond.cx + (v - old.cx) * pond.rx / old.rx;
+      const my = v => pond.cy + (v - old.cy) * pond.ry / old.ry;
+      for (const k of koi) { for (const p of k.pts) { p.x = mx(p.x); p.y = my(p.y); } k.target = randWater(60 * S); k.mode = 'wander'; }
+      for (const c of coins) { c.x = mx(c.x); c.y = my(c.y); }
+      for (const l of lilies) { l.x = mx(l.x); l.y = my(l.y); }
+      for (const l of lanterns) { l.x = mx(l.x); l.y = my(l.y); }
+      ripples = []; drops = []; flying = []; glows = [];
+    }
+  }
+
+  /* ---------- draw ---------- */
+  let tNow = 0;
+  function drawGround() {
+    ctx.fillStyle = '#1f2b22';
+    ctx.fillRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(pond.cx, pond.cy, Math.min(pond.rx, pond.ry), pond.cx, pond.cy, Math.max(W, H) * 0.75);
+    g.addColorStop(0, 'rgba(70,95,60,0.55)'); g.addColorStop(1, 'rgba(10,16,12,0.9)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  function waterClip() {
+    ctx.beginPath();
+    ctx.ellipse(pond.cx, pond.cy, pond.rx, pond.ry, 0, 0, TAU);
+    ctx.clip();
+  }
+  function drawWater() {
+    const r = Math.max(pond.rx, pond.ry);
+    const g = ctx.createRadialGradient(pond.cx - pond.rx * 0.15, pond.cy - pond.ry * 0.2, r * 0.05, pond.cx, pond.cy, r);
+    g.addColorStop(0, '#2f8a8a'); g.addColorStop(0.55, '#1c6070'); g.addColorStop(1, '#0d3340');
+    ctx.fillStyle = g;
+    ctx.fillRect(pond.cx - pond.rx, pond.cy - pond.ry, pond.rx * 2, pond.ry * 2);
+    for (const p of pebbles) {
+      ctx.fillStyle = `rgba(${p.c},0.28)`;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r, p.r * 0.7, p.rot, 0, TAU); ctx.fill();
+    }
+  }
+  function drawBowl() {
+    const { x, y, R } = bowl;
+    ctx.fillStyle = 'rgba(0,10,12,0.3)';
+    ctx.beginPath(); ctx.arc(x + 4 * S, y + 7 * S, R * 1.14, 0, TAU); ctx.fill();
+    const g = ctx.createRadialGradient(x - R * 0.3, y - R * 0.3, R * 0.2, x, y, R * 1.15);
+    g.addColorStop(0, '#9aa49c'); g.addColorStop(1, '#4d5853');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, R * 1.12, 0, TAU); ctx.fill();
+    const g2 = ctx.createRadialGradient(x + R * 0.2, y + R * 0.25, 0, x, y, R * 0.84);
+    g2.addColorStop(0, '#225f66'); g2.addColorStop(1, '#123c44');
+    ctx.fillStyle = g2;
+    ctx.beginPath(); ctx.arc(x, y, R * 0.84, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, R * 1.1, Math.PI * 1.05, Math.PI * 1.7); ctx.stroke();
+    ctx.save();
+    ctx.globalAlpha = 0.16 + Math.sin(tNow * 1.2) * 0.04;
+    ctx.fillStyle = '#e8d6a0';
+    ctx.font = `${Math.round(R * 0.9)}px "ZCOOL XiaoWei", "STKaiti", serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('愿', x, y + R * 0.04);
+    ctx.restore();
+  }
+  function drawSunkCoins(dt) {
+    for (const c of coins) {
+      c.age += dt;
+      const s = Math.min(1, c.age / 1.4);
+      const e = 1 - Math.pow(1 - s, 3);
+      const x = c.x + c.dx * e + Math.sin(c.age * 3) * (1 - s) * 3 * S, y = c.y + c.dy * e;
+      drawCoin(x, y, 8.5 * S * (1 - 0.22 * e), c.rot * (1 - e) + (s >= 1 ? 0 : c.age * 4), 0.95 - 0.4 * e);
+    }
+  }
+  function drawCaustics() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 7; i++) {
+      const x = pond.cx + Math.sin(tNow * 0.07 + i * 1.7) * pond.rx * 0.6;
+      const y = pond.cy + Math.cos(tNow * 0.05 + i * 2.3) * pond.ry * 0.6;
+      const r = (90 + 30 * Math.sin(tNow * 0.3 + i)) * S;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, 'rgba(140,220,210,0.07)'); g.addColorStop(1, 'rgba(140,220,210,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+  function drawRipples(dt) {
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+      if (r.delay > 0) { r.delay -= dt; continue; }
+      r.r += (r.max - r.r) * Math.min(1, dt * 1.6) + 12 * S * dt;
+      r.life -= dt * 0.75;
+      if (r.life <= 0) { ripples.splice(i, 1); continue; }
+      ctx.strokeStyle = `rgba(220,245,240,${r.a * r.life})`;
+      ctx.lineWidth = r.w * S * (0.6 + r.life);
+      ctx.beginPath(); ctx.ellipse(r.x, r.y, r.r, r.r * 0.92, 0, 0, TAU); ctx.stroke();
+    }
+  }
+  function drawGlows(dt) {
+    for (let i = glows.length - 1; i >= 0; i--) {
+      const g = glows[i];
+      g.life -= dt * 0.9;
+      if (g.life <= 0) { glows.splice(i, 1); continue; }
+      const r = (g.big ? 70 + (1.6 - g.life) * 50 : 40 + (1 - g.life) * 30) * S;
+      const gr = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, r);
+      gr.addColorStop(0, `rgba(255,214,120,${(g.big ? 0.3 : 0.35) * Math.min(1, g.life)})`); gr.addColorStop(1, 'rgba(255,214,120,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(g.x, g.y, r, 0, TAU); ctx.fill();
+    }
+  }
+  function drawLilies() {
+    for (const l of lilies) {
+      const rot = l.rot + Math.sin(tNow * 0.4 + l.ph) * 0.06;
+      const bx = l.x + Math.sin(tNow * 0.3 + l.ph) * 2 * S, by = l.y + Math.cos(tNow * 0.25 + l.ph) * 2 * S;
+      ctx.fillStyle = 'rgba(0,15,15,0.3)';
+      ctx.beginPath(); ctx.moveTo(bx + 6 * S, by + 8 * S); ctx.arc(bx + 6 * S, by + 8 * S, l.r, rot + 0.28, rot + TAU - 0.28); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#3f7d3c';
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.arc(bx, by, l.r, rot + 0.28, rot + TAU - 0.28); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(160,210,120,0.35)'; ctx.lineWidth = 1;
+      for (let i = 1; i < 8; i++) {
+        const a = rot + 0.28 + i * (TAU - 0.56) / 8;
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a) * l.r * 0.9, by + Math.sin(a) * l.r * 0.9); ctx.stroke();
+      }
+      if (l.flower) {
+        const fx = bx - Math.cos(rot) * l.r * 0.25, fy = by - Math.sin(rot) * l.r * 0.25;
+        for (let ring = 0; ring < 2; ring++) {
+          const n = 8, pr = l.r * (ring ? 0.34 : 0.5);
+          ctx.fillStyle = ring ? '#fbe3ec' : '#f2a6c0';
+          for (let i = 0; i < n; i++) {
+            const a = i / n * TAU + ring * 0.4 + rot;
+            ctx.beginPath(); ctx.ellipse(fx + Math.cos(a) * pr * 0.5, fy + Math.sin(a) * pr * 0.5, pr * 0.55, pr * 0.22, a, 0, TAU); ctx.fill();
+          }
+        }
+        ctx.fillStyle = '#f5cf4a'; ctx.beginPath(); ctx.arc(fx, fy, l.r * 0.1, 0, TAU); ctx.fill();
+      }
+    }
+  }
+  function drawStones() {
+    ctx.save();
+    for (const s of stones) {
+      const path = new Path2D();
+      const n = s.pts.length;
+      for (let i = 0; i <= n; i++) {
+        const a = s.rot + i / n * TAU, r = s.pts[i % n];
+        const x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r * 0.82;
+        if (i === 0) path.moveTo(x, y); else path.lineTo(x, y);
+      }
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.save(); ctx.translate(3 * S, 5 * S); ctx.fill(path); ctx.restore();
+      const base = 128 + s.tone;
+      const g = ctx.createLinearGradient(s.x - s.r, s.y - s.r, s.x + s.r, s.y + s.r);
+      g.addColorStop(0, `rgb(${base + 34},${base + 30},${base + 22})`);
+      g.addColorStop(1, `rgb(${base - 40},${base - 40},${base - 44})`);
+      ctx.fillStyle = g; ctx.fill(path);
+      ctx.strokeStyle = 'rgba(30,30,26,0.35)'; ctx.lineWidth = 1; ctx.stroke(path);
+    }
+    ctx.restore();
+    // wet edge
+    ctx.strokeStyle = 'rgba(8,30,34,0.55)';
+    ctx.lineWidth = 6 * S;
+    ctx.beginPath(); ctx.ellipse(pond.cx, pond.cy, pond.rx, pond.ry, 0, 0, TAU); ctx.stroke();
+  }
+  function drawFlying(dt) {
+    for (let i = flying.length - 1; i >= 0; i--) {
+      const f = flying[i];
+      f.t += dt / f.dur;
+      f.spin += dt * 16;
+      if (f.t >= 1) { flying.splice(i, 1); land(f); continue; }
+      const t = f.t, e = t;
+      const x = f.sx + (f.tx - f.sx) * e, y = f.sy + (f.ty - f.sy) * e;
+      const z = f.arc * 4 * t * (1 - t);
+      ctx.fillStyle = `rgba(0,0,0,${0.12 + 0.25 * t})`;
+      ctx.beginPath(); ctx.ellipse(x, y, 8 * S, 5 * S, 0, 0, TAU); ctx.fill();
+      drawCoin(x, y - z, 9 * S * (1 + z / (260 * S) + (1 - t) * 0.5), f.spin);
+    }
+  }
+  function drawDrops(dt) {
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      d.vz -= 520 * S * dt;
+      d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      if (d.z < 0) {
+        drops.splice(i, 1);
+        if (Math.random() < 0.35) ripples.push({ x: d.x, y: d.y, r: 1, max: 9 * S, life: 0.8, a: 0.4, w: 0.8 });
+        continue;
+      }
+      ctx.fillStyle = 'rgba(225,250,248,0.85)';
+      ctx.beginPath(); ctx.arc(d.x, d.y - d.z, d.r, 0, TAU); ctx.fill();
+    }
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now; tNow += dt;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    drawGround();
+    ctx.save();
+    waterClip();
+    drawWater();
+    drawBowl();
+    drawSunkCoins(dt);
+    for (const k of koi) updateKoi(k, dt);
+    for (const k of koi) drawKoiShadow(k);
+    for (const k of koi) drawKoi(k);
+    ctx.fillStyle = 'rgba(20,90,100,0.12)';
+    ctx.fillRect(pond.cx - pond.rx, pond.cy - pond.ry, pond.rx * 2, pond.ry * 2);
+    drawCaustics();
+    drawGlows(dt);
+    drawRipples(dt);
+    drawLilies();
+    drawLanterns(dt);
+    ctx.restore();
+    drawStones();
+    for (const lb of labels) drawLabel(...lb);
+    labels = [];
+    drawAim(now);
+    drawFlying(dt);
+    drawDrops(dt);
+    drawFloats(dt);
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- F0 input: tap touches the water, hold and flick upward tosses ---------- */
+  const ptr = { down: false, id: null, holding: false, x0: 0, y0: 0, t0: 0, x: 0, y: 0, samples: [] };
+  const HOLD_MS = 180, TAP_PX = 10;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  function velocity() {
+    const s = ptr.samples, now = performance.now();
+    const recent = s.filter(p => now - p.t < 140);
+    if (recent.length < 2) return [0, 0];
+    const a = recent[0], b = recent[recent.length - 1], dt = (b.t - a.t) / 1000;
+    return dt < 0.012 ? [0, 0] : [(b.x - a.x) / dt, (b.y - a.y) / dt];
+  }
+  // how far a flick carries, scaled so phones and desktops feel alike
+  const reach = () => 0.28 * Math.max(0.5, Math.min(1, Math.min(W, H) / 800));
+  const isFlick = v => v[1] < -220 && Math.hypot(v[0], v[1]) > 280;
+  function drawAim(now) {
+    if (!ptr.down) return;
+    if (!ptr.holding && now - ptr.t0 > HOLD_MS) ptr.holding = true;
+    if (!ptr.holding) return;
+    const v = velocity();
+    if (isFlick(v)) {
+      const [tx, ty] = clampWater(ptr.x + v[0] * reach(), ptr.y + v[1] * reach(), 18 * S);
+      ctx.save();
+      ctx.setLineDash([4, 5]);
+      ctx.strokeStyle = 'rgba(255,214,120,0.75)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(tx, ty, 12 * S, 0, TAU); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(ptr.x + 5, ptr.y + 9, 11 * S, 6 * S, 0, 0, TAU); ctx.fill();
+    drawCoin(ptr.x, ptr.y - 6 * S, 12 * S, Math.sin(now / 300) * 0.4);
+  }
+  cv.addEventListener('pointerdown', e => {
+    if (ptr.down) return;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    const [x, y] = pos(e), t = performance.now();
+    Object.assign(ptr, { down: true, id: e.pointerId, holding: false, x0: x, y0: y, t0: t, x, y, samples: [{ x, y, t }] });
+    cv.style.cursor = 'grabbing';
+    if (!wishesEl.hidden) wishesEl.hidden = true;
+  });
+  cv.addEventListener('pointermove', e => {
+    const [x, y] = pos(e);
+    if (!ptr.down || e.pointerId !== ptr.id) {
+      if (e.pointerType === 'mouse') { hovered = lanternAt(x, y); cv.style.cursor = hovered ? 'pointer' : 'grab'; }
+      return;
+    }
+    const t = performance.now();
+    ptr.x = x; ptr.y = y;
+    ptr.samples.push({ x, y, t });
+    if (ptr.samples.length > 30) ptr.samples.shift();
+    if (!ptr.holding && Math.hypot(x - ptr.x0, y - ptr.y0) > TAP_PX) ptr.holding = true;
+  });
+  cv.addEventListener('pointerup', e => {
+    if (!ptr.down || e.pointerId !== ptr.id) return;
+    const [x, y] = pos(e), t = performance.now();
+    ptr.x = x; ptr.y = y; ptr.samples.push({ x, y, t });
+    ptr.down = false;
+    cv.style.cursor = 'grab';
+    if (!ptr.holding && t - ptr.t0 < 400) {
+      const l = lanternAt(x, y);
+      if (l) l.label = 3; else touchWater(x, y);
+      return;
+    }
+    const v = velocity();
+    if (isFlick(v)) {
+      toss(x + v[0] * reach(), y + v[1] * reach(), [x, y]);
+    } else {
+      toast('往上甩一下，铜钱才会飞出去');
+    }
+  });
+  cv.addEventListener('pointercancel', () => { ptr.down = false; ptr.holding = false; cv.style.cursor = 'grab'; });
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!wishForm.hidden) closeWish();
+    if (!wishesEl.hidden) wishesEl.hidden = true;
+  });
+  cv.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const [x, y] = randWater(40 * S); toss(x, y); }
+  });
+  window.addEventListener('resize', layout);
+  layout();
+  requestAnimationFrame(frame);
+})();
+</script>
