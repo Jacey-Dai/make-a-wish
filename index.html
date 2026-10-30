@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.5 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.6 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -132,7 +132,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
 <script>
 (() => {
   const cv = document.getElementById('pond');
-  const ctx = cv.getContext('2d');
+  let ctx = cv.getContext('2d');
   const nEl = document.getElementById('n');
   const hint = document.getElementById('hint');
   const hitsEl = document.getElementById('hits');
@@ -205,6 +205,25 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     };
   }
   const ell = (g, e) => { g.beginPath(); g.ellipse(e[0], e[1], e[2], e[3], 0, 0, TAU); };
+  // depth of field: re-draw a band of an offscreen canvas blurred (skipped where canvas filters are missing)
+  function blurBand(g, c, y0, y1, px) {
+    if (!('filter' in g) || px <= 0) return;
+    const t = document.createElement('canvas'); t.width = c.width; t.height = c.height;
+    t.getContext('2d').drawImage(c, 0, 0);
+    g.save(); g.beginPath(); g.rect(0, y0, W, y1 - y0); g.clip();
+    g.filter = `blur(${px}px)`; g.drawImage(t, 0, 0, W, H); g.restore();
+  }
+  let grainC = null;
+  function grain(g, a, op = 'source-over') {
+    if (!grainC) {
+      grainC = document.createElement('canvas'); grainC.width = grainC.height = 160;
+      const gg = grainC.getContext('2d'), im = gg.createImageData(160, 160), d = im.data;
+      for (let i = 0; i < d.length; i += 4) { const v = Math.random() < 0.5 ? 0 : 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = Math.random() * 255; }
+      gg.putImageData(im, 0, 0);
+    }
+    g.save(); g.globalAlpha = a; g.globalCompositeOperation = op;
+    g.fillStyle = g.createPattern(grainC, 'repeat'); g.fillRect(0, 0, W, H); g.restore();
+  }
 
   function paintBackground() {
     const [c, g] = offscreen();
@@ -224,12 +243,17 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       const n = Math.ceil(W / 22);
       for (let i = 0; i < n; i++) {
         const x = srnd(-40, W + 40), y = srnd(-40, top * yMax), r = srnd(26, 64) * sc;
-        g.fillStyle = base; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-        g.globalAlpha = 0.7; g.fillStyle = hi;
-        g.beginPath(); g.arc(x - r * 0.25, y - r * 0.3, r * 0.55, 0, TAU); g.fill();
+        g.globalAlpha = 0.85; g.fillStyle = base; g.beginPath(); g.arc(x, y, r * 0.8, 0, TAU); g.fill();
+        g.globalAlpha = 0.8;
+        for (let k = 0; k < 18; k++) {
+          const a = srnd(0, TAU), d = Math.sqrt(srnd(0, 1)) * r, lr = srnd(0.1, 0.2) * r;
+          g.fillStyle = srnd(0, 1) < 0.5 - Math.sin(a) * 0.3 ? hi : base;
+          g.beginPath(); g.ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d, lr, lr * 0.55, srnd(0, TAU), 0, TAU); g.fill();
+        }
         g.globalAlpha = 1;
       }
     }
+    blurBand(g, c, 0, wt + 30 * sc, 3.2 * sc);
     // mossy ruin wall
     gr = g.createLinearGradient(0, wt, 0, top);
     gr.addColorStop(0, '#838c74'); gr.addColorStop(1, '#434b3c');
@@ -286,6 +310,18 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
         g.fill();
       }
     }
+    blurBand(g, c, 0, top, 1.3 * sc);
+    gr = g.createLinearGradient(0, 0, 0, top);
+    gr.addColorStop(0, 'rgba(236,246,206,0.32)'); gr.addColorStop(0.6, 'rgba(220,236,190,0.14)'); gr.addColorStop(1, 'rgba(220,236,190,0.05)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, top);
+    g.save(); g.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 46; i++) {
+      const x = srnd(0, W), y = srnd(0, wt + 20 * sc), r = srnd(4, 16) * sc;
+      const bg = g.createRadialGradient(x, y, 0, x, y, r);
+      bg.addColorStop(0, 'rgba(255,255,215,0.3)'); bg.addColorStop(0.7, 'rgba(255,255,215,0.18)'); bg.addColorStop(1, 'rgba(255,255,215,0)');
+      g.fillStyle = bg; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    }
+    g.restore();
     // lawn
     gr = g.createLinearGradient(0, top, 0, H);
     gr.addColorStop(0, '#6c9a3a'); gr.addColorStop(1, '#2f5222');
@@ -293,10 +329,29 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     gr = g.createLinearGradient(0, top, 0, top + 26 * sc);
     gr.addColorStop(0, 'rgba(15,30,10,0.45)'); gr.addColorStop(1, 'rgba(15,30,10,0)');
     g.fillStyle = gr; g.fillRect(0, top, W, 26 * sc);
-    for (let i = 0; i < W * H / 800; i++) {
-      const x = srnd(0, W), y = srnd(top, H);
-      g.strokeStyle = srnd(0, 1) < 0.5 ? 'rgba(185,225,105,0.4)' : 'rgba(25,55,18,0.35)';
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + srnd(-2, 2), y - srnd(3, 7) * sc); g.stroke();
+    g.lineWidth = 0.8;
+    for (let i = 0; i < W * H / 260; i++) {
+      const x = srnd(0, W), y = srnd(top, H), f = (y - top) / (H - top);
+      g.strokeStyle = srnd(0, 1) < 0.5 ? `rgba(190,228,110,${0.15 + f * 0.25})` : `rgba(22,50,16,${0.2 + f * 0.25})`;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + srnd(-2, 2), y - srnd(2, 4 + f * 6) * sc); g.stroke();
+    }
+    g.lineWidth = 1;
+    g.save(); g.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 14; i++) {
+      const x = srnd(0, W), y = srnd(top, H), r = srnd(30, 90) * sc;
+      g.save(); g.translate(x, y); g.scale(1, 0.45);
+      const sg = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      sg.addColorStop(0, 'rgba(230,240,150,0.22)'); sg.addColorStop(1, 'rgba(230,240,150,0)');
+      g.fillStyle = sg; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill(); g.restore();
+    }
+    g.restore();
+    grain(g, 0.05);
+    {
+      const e = R.path;
+      g.save(); g.translate(e[0], e[1] + 6 * sc); g.scale(1, (e[3] + 18 * sc) / (e[2] + 24 * sc));
+      const sg = g.createRadialGradient(0, 0, (e[2] + 24 * sc) * 0.8, 0, 0, e[2] + 24 * sc);
+      sg.addColorStop(0, 'rgba(10,24,8,0.4)'); sg.addColorStop(1, 'rgba(10,24,8,0)');
+      g.fillStyle = sg; g.beginPath(); g.arc(0, 0, e[2] + 24 * sc, 0, TAU); g.fill(); g.restore();
     }
     for (let i = 0; i < W * H / 6000; i++) {
       g.fillStyle = srnd(0, 1) < 0.6 ? 'rgba(250,250,240,0.8)' : 'rgba(170,200,250,0.75)';
@@ -352,12 +407,19 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       g.save(); g.translate(st.x, st.y); g.rotate(st.rot);
       g.fillStyle = 'rgba(5,20,8,0.35)';
       g.beginPath(); g.ellipse(3 * sc, 4 * sc, st.w * 0.55, st.h * 0.55, 0, 0, TAU); g.fill();
-      const gr = g.createLinearGradient(0, -st.h / 2, 0, st.h / 2);
-      gr.addColorStop(0, '#9aa08a'); gr.addColorStop(1, '#434b3b');
+      const v = srnd(-14, 14);
+      const gr = g.createRadialGradient(-st.w * 0.2, -st.h * 0.3, st.w * 0.04, 0, 0, st.w * 0.62);
+      gr.addColorStop(0, `rgb(${200 + v},${198 + v},${176 + v})`); gr.addColorStop(0.45, `rgb(${134 + v},${136 + v},${116 + v})`); gr.addColorStop(1, `rgb(${50 + v},${55 + v},${44 + v})`);
       g.fillStyle = gr;
       g.beginPath(); g.ellipse(0, 0, st.w * 0.55, st.h * 0.55, 0, 0, TAU); g.fill();
-      g.fillStyle = srnd(0, 1) < 0.5 ? 'rgba(134,184,62,0.85)' : 'rgba(102,150,48,0.85)';
-      g.beginPath(); g.ellipse(-st.w * 0.08, -st.h * 0.2, st.w * 0.42, st.h * 0.3, 0, Math.PI, TAU); g.fill();
+      const wg = g.createLinearGradient(0, 0, 0, st.h * 0.55);
+      wg.addColorStop(0, 'rgba(20,32,22,0)'); wg.addColorStop(1, 'rgba(20,32,22,0.45)');
+      g.fillStyle = wg; g.fill();
+      const mg = g.createRadialGradient(-st.w * 0.08, -st.h * 0.28, 0, -st.w * 0.08, -st.h * 0.2, st.w * 0.45);
+      const mc = srnd(0, 1) < 0.5 ? '128,168,62' : '100,140,50';
+      mg.addColorStop(0, `rgba(${mc},0.85)`); mg.addColorStop(0.65, `rgba(${mc},0.5)`); mg.addColorStop(1, `rgba(${mc},0)`);
+      g.fillStyle = mg;
+      g.beginPath(); g.ellipse(-st.w * 0.08, -st.h * 0.22, st.w * 0.45, st.h * 0.34, 0, 0, TAU); g.fill();
       g.restore();
       if (srnd(0, 1) < 0.45) {
         g.strokeStyle = 'rgba(160,210,80,0.85)'; g.lineWidth = 1;
@@ -368,6 +430,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
         g.beginPath(); g.arc(st.x + srnd(-6, 6) * sc, st.y - st.h * 0.35, 1.6 * sc, 0, TAU); g.fill();
       }
     }
+    grain(g, 0.05, 'source-atop');
     return c;
   }
 
@@ -402,12 +465,14 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       g.restore();
     };
     rock(0, 1); rock(W, -1);
+    blurBand(g, c, 0, H, 2.6 * sc);
     let gr = g.createRadialGradient(W / 2, H * 0.58, Math.min(W, H) * 0.42, W / 2, H * 0.58, Math.max(W, H) * 0.85);
     gr.addColorStop(0, 'rgba(6,16,8,0)'); gr.addColorStop(1, 'rgba(6,16,8,0.55)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
     gr = g.createLinearGradient(0, 0, 0, 110);
     gr.addColorStop(0, 'rgba(12,28,14,0.55)'); gr.addColorStop(1, 'rgba(12,28,14,0)');
     g.fillStyle = gr; g.fillRect(0, 0, W, 110);
+    grain(g, 0.035);
     return c;
   }
 
@@ -455,7 +520,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       b.y += (b.vy + Math.cos(tNow * 0.17 + b.ph) * 1.5 * S) * dt;
       if (!inWater(b.x, b.y, 14 * S)) { b.vx += (pond.cx - b.x) * 0.02; b.vy += (pond.cy - b.y) * 0.02; }
       b.rot += b.vx * 0.002;
-      const [x, y] = toScreen(b.x, b.y), r = b.r, T = view.T;
+      const [x, y0] = toScreen(b.x, b.y), r = b.r, T = view.T, y = y0 + waveAt(b.x, b.y) * 1.6 * S;
       ctx.fillStyle = 'rgba(5,30,15,0.25)';
       ctx.beginPath(); ctx.ellipse(x + 3 * S, y + 6 * S, r, r * T, 0, 0, TAU); ctx.fill();
       ctx.fillStyle = '#fbfbf4';
@@ -538,7 +603,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       if (k.bubbleT <= 0) {
         k.bubbleT = rnd(0.35, 0.7);
         const fx = h.x + Math.cos(k.heading) * 4 * S, fy = h.y + Math.sin(k.heading) * 4 * S;
-        ripples.push({ x: fx, y: fy, r: 2 * S, max: rnd(16, 26) * S, life: 0.9, a: 0.5, n: 2 });
+        addRipple({ x: fx, y: fy, r: 2 * S, max: rnd(16, 26) * S, life: 0.9, a: 0.5, n: 2 });
       }
       if (k.timer <= 0) { k.mode = 'wander'; k.target = randWater(60 * S); }
     } else {
@@ -613,10 +678,12 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   }
 
   function drawKoiShadow(k) {
-    const off = 7 * S;
-    ctx.fillStyle = 'rgba(4,18,22,0.28)';
-    ctx.fill(koiPath(k, off, off * 1.3));
-    ctx.fill(finsPath(k, off, off * 1.3));
+    const off = 9 * S;
+    ctx.fillStyle = 'rgba(4,18,22,0.12)';
+    ctx.fill(koiPath(k, off * 1.3, off * 1.75));
+    ctx.fillStyle = 'rgba(4,18,22,0.2)';
+    ctx.fill(koiPath(k, off, off * 1.4));
+    ctx.fill(finsPath(k, off, off * 1.4));
   }
   function drawKoi(k) {
     const kind = k.kind;
@@ -637,9 +704,12 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       ctx.ellipse(x, y, widthAt(k, 2) * pt.r, widthAt(k, 2) * pt.r * 0.8, ang, 0, TAU);
       ctx.fill();
     }
-    // dorsal sheen
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 1.6 * S;
+    // rounded flanks and a wet dorsal sheen
+    ctx.strokeStyle = 'rgba(25,14,8,0.28)';
+    ctx.lineWidth = widthAt(k, 3) * 0.9;
+    ctx.stroke(body);
+    ctx.strokeStyle = 'rgba(255,255,245,0.26)';
+    ctx.lineWidth = 2.4 * S;
     ctx.beginPath();
     ctx.moveTo(p[1].x, p[1].y);
     for (let i = 2; i < k.segs - 2; i++) ctx.lineTo(p[i].x, p[i].y);
@@ -696,8 +766,8 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     }
     coins.push({ x, y, rot: rnd(0, TAU), age: 0, dx, dy });
     if (coins.length > 240) coins.shift();
-    ripples.push({ x, y, r: 3 * S, max: 140 * S, life: 1, a: 0.8, n: 7, big: true });
-    ripples.push({ x, y, r: 2 * S, max: 70 * S, life: 0.8, a: 0.5, n: 4, delay: 0.35 });
+    addRipple({ x, y, r: 3 * S, max: 140 * S, life: 1, a: 0.8, n: 7, big: true });
+    addRipple({ x, y, r: 2 * S, max: 70 * S, life: 0.8, a: 0.5, n: 4, delay: 0.35 });
     pushBlossoms(x, y, 60 * S);
     for (let i = 0; i < 16; i++) {
       const a = rnd(0, TAU), v = rnd(30, 110) * S;
@@ -734,7 +804,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   /* ---------- F0 touch water ---------- */
   function touchWater(x, y) {
     if (!inWater(x, y)) return;
-    ripples.push({ x, y, r: 2 * S, max: 95 * S, life: 1, a: 0.7, n: 5, big: true });
+    addRipple({ x, y, r: 2 * S, max: 95 * S, life: 1, a: 0.7, n: 5, big: true });
     pushBlossoms(x, y, 40 * S);
     for (const k of koi) {
       const h = k.pts[0], d = Math.hypot(h.x - x, h.y - y);
@@ -763,7 +833,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       if (!inWater(l.x, l.y, 36 * S)) l.v *= Math.pow(0.4, dt);
       l.a += Math.sin(l.age * 0.4 + l.ph) * 0.15 * dt;
       l.x += Math.cos(l.a) * l.v * dt; l.y += Math.sin(l.a) * l.v * dt;
-      if (l.wake <= 0 && l.v > 4 * S) { l.wake = 1.4; ripples.push({ x: l.x, y: l.y, r: 10 * S, max: 32 * S, life: 0.8, a: 0.35, n: 2 }); }
+      if (l.wake <= 0 && l.v > 4 * S) { l.wake = 1.4; addRipple({ x: l.x, y: l.y, r: 10 * S, max: 32 * S, life: 0.8, a: 0.35, n: 2 }); }
       const alpha = Math.min(1, l.age / 0.8) * (l.age > 20 ? 1 - (l.age - 20) / 2 : 1);
       const flick = 0.85 + Math.sin(tNow * 13 + l.ph) * 0.08 + Math.sin(tNow * 7.3) * 0.07;
       ctx.save();
@@ -892,6 +962,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     bowl.x = pond.cx; bowl.y = pond.cy; bowl.R = Math.max(30, Math.min(pond.rx, pond.ry) * 0.17);
     if (!koi.length) {
       buildScenery();
+      setupWater();
       makeLilies();
       makeBlossoms();
       for (const kd of KINDS) koi.push(makeKoi(kd));
@@ -905,6 +976,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       for (const b of blossoms) { b.x = mx(b.x); b.y = my(b.y); }
       ripples = []; drops = []; flying = []; glows = [];
       buildScenery();
+      setupWater();
     }
   }
 
@@ -936,24 +1008,37 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     }
   }
   function drawBowl() {
+    // carved stone bowl on the bed, lit from the upper left
     const { x, y, R } = bowl;
-    ctx.fillStyle = 'rgba(0,10,12,0.3)';
-    ctx.beginPath(); ctx.arc(x + 4 * S, y + 7 * S, R * 1.14, 0, TAU); ctx.fill();
-    const g = ctx.createRadialGradient(x - R * 0.3, y - R * 0.3, R * 0.2, x, y, R * 1.15);
-    g.addColorStop(0, '#b4b59d'); g.addColorStop(1, '#5a604c');
+    ctx.fillStyle = 'rgba(0,12,8,0.3)';
+    ctx.beginPath(); ctx.arc(x + 7 * S, y + 10 * S, R * 1.18, 0, TAU); ctx.fill();
+    const g = ctx.createRadialGradient(x - R * 0.4, y - R * 0.45, R * 0.1, x, y, R * 1.15);
+    g.addColorStop(0, '#d6d0b2'); g.addColorStop(0.55, '#8f8d74'); g.addColorStop(1, '#4a4c3b');
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(x, y, R * 1.12, 0, TAU); ctx.fill();
-    const g2 = ctx.createRadialGradient(x + R * 0.2, y + R * 0.25, 0, x, y, R * 0.84);
-    g2.addColorStop(0, '#1f7a62'); g2.addColorStop(1, '#0f3f33');
+    const g2 = ctx.createRadialGradient(x + R * 0.15, y + R * 0.2, 0, x, y, R * 0.86);
+    g2.addColorStop(0, '#9a915e'); g2.addColorStop(0.7, '#655f3f'); g2.addColorStop(1, '#2c2d20');
     ctx.fillStyle = g2;
     ctx.beginPath(); ctx.arc(x, y, R * 0.84, 0, TAU); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(x, y, R * 1.1, Math.PI * 1.05, Math.PI * 1.7); ctx.stroke();
     ctx.save();
-    ctx.globalAlpha = 0.16 + Math.sin(tNow * 1.2) * 0.04;
-    ctx.fillStyle = '#e8d6a0';
+    ctx.beginPath(); ctx.arc(x, y, R * 0.84, 0, TAU); ctx.clip();
+    ctx.strokeStyle = 'rgba(12,16,8,0.45)'; ctx.lineWidth = R * 0.28;
+    ctx.beginPath(); ctx.arc(x - R * 0.12, y - R * 0.15, R * 0.92, 0, TAU); ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,235,0.4)'; ctx.lineWidth = 1.5 * S;
+    ctx.beginPath(); ctx.arc(x, y, R * 1.08, Math.PI * 1.0, Math.PI * 1.65); ctx.stroke();
+    ctx.fillStyle = 'rgba(110,140,60,0.45)';
+    for (let i = 0; i < 5; i++) {
+      const a = 0.6 + i * 1.1;
+      ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * R * 0.98, y + Math.sin(a) * R * 0.98, R * 0.16, R * 0.08, a + Math.PI / 2, 0, TAU); ctx.fill();
+    }
+    ctx.save();
     ctx.font = `${Math.round(R * 0.9)}px "ZCOOL XiaoWei", "STKaiti", serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(25,22,10,0.4)';
+    ctx.fillText('愿', x - 1, y + R * 0.04 - 1);
+    ctx.globalAlpha = 0.3 + Math.sin(tNow * 1.2) * 0.06;
+    ctx.fillStyle = '#f0dfa8';
     ctx.fillText('愿', x, y + R * 0.04);
     ctx.restore();
   }
@@ -1035,11 +1120,13 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(x - w / 2, y1); ctx.lineTo(x + w / 2, y1); ctx.lineTo(x + w * 0.56, y2); ctx.lineTo(x - w * 0.56, y2); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.3;
     const seg = 16 * view.sc, gapL = 30 * view.sc;
-    for (let i = 0; i < 10; i++) {
-      const fx = x - w / 2 + (i + 0.5) / 10 * w;
-      for (let yy = y1 - gapL + ((tNow * 140 + i * 37) % gapL); yy < y2; yy += gapL) {
+    for (let i = 0; i < 14; i++) {
+      // uneven sheets of falling water: each strand has its own weight, speed and brightness
+      const fx = x - w / 2 + (i + 0.5 + Math.sin(i * 7.1) * 0.3) / 14 * w;
+      ctx.strokeStyle = `rgba(255,255,255,${0.2 + 0.25 * (0.5 + 0.5 * Math.sin(i * 3.7 + tNow * 0.8))})`;
+      ctx.lineWidth = 0.8 + 1.4 * (0.5 + 0.5 * Math.sin(i * 5.3));
+      for (let yy = y1 - gapL + ((tNow * (120 + 40 * Math.sin(i * 2.3)) + i * 37) % gapL); yy < y2; yy += gapL) {
         const a = Math.max(y1, yy), b = Math.min(y2, yy + seg);
         if (b <= a) continue;
         ctx.beginPath(); ctx.moveTo(fx, a); ctx.lineTo(fx + (b - y1) / (y2 - y1) * (fx - x) * 0.12, b); ctx.stroke();
@@ -1050,7 +1137,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     ctx.fillStyle = m; ctx.beginPath(); ctx.arc(x, y2, w * 1.3, 0, TAU); ctx.fill();
     if (fall.t <= 0) {
       fall.t = rnd(0.35, 0.7);
-      ripples.push({ x: x + rnd(-w * 0.35, w * 0.35), y: toWorldY(y2) + 10 * S, r: 2 * S, max: rnd(30, 50) * S, life: 0.9, a: 0.45, n: 3 });
+      addRipple({ x: x + rnd(-w * 0.35, w * 0.35), y: toWorldY(y2) + 10 * S, r: 2 * S, max: rnd(30, 50) * S, life: 0.9, a: 0.45, n: 3 });
     }
   }
   function drawSunlight(dt) {
@@ -1139,30 +1226,52 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(g.x, g.y, r, 0, TAU); ctx.fill();
     }
   }
+  const LILY = [[79, 125, 42], [107, 154, 53], [138, 180, 67]];
   function drawLilies() {
     for (const l of lilies) {
       const rot = l.rot + Math.sin(tNow * 0.4 + l.ph) * 0.06;
-      const bx = l.x + Math.sin(tNow * 0.3 + l.ph) * 2 * S, by = l.y + Math.cos(tNow * 0.25 + l.ph) * 2 * S;
-      ctx.fillStyle = 'rgba(0,15,15,0.3)';
-      ctx.beginPath(); ctx.moveTo(bx + 6 * S, by + 8 * S); ctx.arc(bx + 6 * S, by + 8 * S, l.r, rot + 0.28, rot + TAU - 0.28); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = l.tone < 0.5 ? '#8cc63f' : (l.tone < 0.8 ? '#a8d84e' : '#6ea832');
-      ctx.beginPath(); ctx.moveTo(bx, by); ctx.arc(bx, by, l.r, rot + 0.28, rot + TAU - 0.28); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(70,120,30,0.35)'; ctx.lineWidth = 1;
-      for (let i = 1; i < 8; i++) {
-        const a = rot + 0.28 + i * (TAU - 0.56) / 8;
-        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a) * l.r * 0.9, by + Math.sin(a) * l.r * 0.9); ctx.stroke();
+      // pads ride the waves
+      const bob = waveAt(l.x, l.y) * 1.6 * S / view.T;
+      const bx = l.x + Math.sin(tNow * 0.3 + l.ph) * 2 * S, by = l.y + Math.cos(tNow * 0.25 + l.ph) * 2 * S + bob;
+      const pad = (ox, oy, r) => { ctx.beginPath(); ctx.moveTo(bx + ox, by + oy); ctx.arc(bx + ox, by + oy, r, rot + 0.28, rot + TAU - 0.28); ctx.closePath(); };
+      ctx.fillStyle = 'rgba(0,18,12,0.32)';
+      pad(3 * S, 4 * S, l.r); ctx.fill();
+      const c = LILY[l.tone < 0.45 ? 1 : l.tone < 0.8 ? 2 : 0];
+      const gr = ctx.createRadialGradient(bx - l.r * 0.35, by - l.r * 0.4, l.r * 0.05, bx, by, l.r);
+      gr.addColorStop(0, tone(c, 1.25)); gr.addColorStop(0.65, tone(c, 1)); gr.addColorStop(1, tone(c, 0.72));
+      ctx.fillStyle = gr;
+      pad(0, 0, l.r); ctx.fill();
+      ctx.strokeStyle = tone(c, 0.6, 0.35); ctx.lineWidth = 0.8;
+      for (let i = 1; i < 10; i++) {
+        const a = rot + 0.28 + i * (TAU - 0.56) / 10;
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a) * l.r * 0.92, by + Math.sin(a) * l.r * 0.92); ctx.stroke();
       }
+      // a raised rim that catches the light, and a waxy sheen
+      ctx.strokeStyle = 'rgba(225,245,170,0.5)'; ctx.lineWidth = 1.1 * S;
+      ctx.beginPath(); ctx.arc(bx, by, l.r - 0.6 * S, Math.PI * 0.95, Math.PI * 1.6); ctx.stroke();
+      ctx.strokeStyle = 'rgba(20,40,12,0.35)';
+      ctx.beginPath(); ctx.arc(bx, by, l.r - 0.6 * S, Math.PI * 0.05, Math.PI * 0.7); ctx.stroke();
+      const sh = ctx.createRadialGradient(bx - l.r * 0.3, by - l.r * 0.35, 0, bx - l.r * 0.3, by - l.r * 0.35, l.r * 0.5);
+      sh.addColorStop(0, 'rgba(255,255,235,0.22)'); sh.addColorStop(1, 'rgba(255,255,235,0)');
+      ctx.fillStyle = sh; pad(0, 0, l.r); ctx.fill();
       if (l.flower) {
         const fx = bx - Math.cos(rot) * l.r * 0.25, fy = by - Math.sin(rot) * l.r * 0.25;
-        for (let ring = 0; ring < 2; ring++) {
-          const n = 8, pr = l.r * (ring ? 0.34 : 0.5);
-          ctx.fillStyle = ring ? '#ffffff' : '#eef0e4';
+        ctx.fillStyle = 'rgba(0,20,10,0.25)';
+        ctx.beginPath(); ctx.arc(fx + 2 * S, fy + 3 * S, l.r * 0.45, 0, TAU); ctx.fill();
+        for (let ring = 0; ring < 3; ring++) {
+          const n = 8, pr = l.r * [0.52, 0.4, 0.26][ring];
           for (let i = 0; i < n; i++) {
             const a = i / n * TAU + ring * 0.4 + rot;
-            ctx.beginPath(); ctx.ellipse(fx + Math.cos(a) * pr * 0.5, fy + Math.sin(a) * pr * 0.5, pr * 0.55, pr * 0.22, a, 0, TAU); ctx.fill();
+            const px = fx + Math.cos(a) * pr * 0.5, py = fy + Math.sin(a) * pr * 0.5;
+            const pg = ctx.createLinearGradient(fx, fy, fx + Math.cos(a) * pr, fy + Math.sin(a) * pr);
+            pg.addColorStop(0, ring ? '#f4e7e0' : '#d9dccb'); pg.addColorStop(1, Math.sin(a) < 0 ? '#ffffff' : '#e8eadc');
+            ctx.fillStyle = pg;
+            ctx.beginPath(); ctx.ellipse(px, py, pr * 0.55, pr * 0.22, a, 0, TAU); ctx.fill();
           }
         }
-        ctx.fillStyle = '#f5cf4a'; ctx.beginPath(); ctx.arc(fx, fy, l.r * 0.1, 0, TAU); ctx.fill();
+        const cg = ctx.createRadialGradient(fx, fy, 0, fx, fy, l.r * 0.12);
+        cg.addColorStop(0, '#ffe58a'); cg.addColorStop(1, '#d9a92e');
+        ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(fx, fy, l.r * 0.12, 0, TAU); ctx.fill();
       }
     }
   }
@@ -1187,7 +1296,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
       if (d.z < 0) {
         drops.splice(i, 1);
-        if (Math.random() < 0.35) ripples.push({ x: d.x, y: d.y, r: 1, max: 12 * S, life: 0.7, a: 0.4, n: 1 });
+        if (Math.random() < 0.35) addRipple({ x: d.x, y: d.y, r: 1, max: 12 * S, life: 0.7, a: 0.4, n: 1 });
         continue;
       }
       const [x, y] = toScreen(d.x, d.y);
@@ -1196,33 +1305,416 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     }
   }
 
+  /* ---------- water surface (WebGL): wave sim, refraction, caustics, reflection ---------- */
+  // Wave heights live on a CPU grid over the pond's world box. Each frame the floor, coins and koi are drawn
+  // into underC, and a fragment shader bends that picture through the surface normals. ?flat forces the 2D path.
+  const water = { bx: 0, by: 0, bw: 1, bh: 1, gD: 1, nx: 0, ny: 0, cell: 1, h: null, p: null, mask: null, px: null, acc: 0, wakeT: 0, ambT: 1, pend: [] };
+  // with WebGL the frame is three stacked canvases: static scenery, the water, then #pond for everything above the surface
+  const gcv = document.createElement('canvas'), bgEl = document.createElement('canvas');
+  let gl = null, glp = null, tex = {};
+  const VS = 'attribute vec2 aP;varying vec2 vUv;void main(){vUv=vec2(aP.x*.5+.5,.5-aP.y*.5);gl_Position=vec4(aP,0.,1.);}';
+  const FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform sampler2D uUnder, uWave, uRefl;
+uniform vec4 uBox, uWorld;
+uniform vec2 uScreen;
+uniform float uT, uS, uTime, uFarY;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(hash(i), hash(i + vec2(1., 0.)), f.x), mix(hash(i + vec2(0., 1.)), hash(i + vec2(1., 1.)), f.x), f.y);
+}
+float caus(vec2 p, float t) {
+  vec2 q = p + vec2(sin(p.y * 1.3 + t * .7), sin(p.x * 1.1 - t * .6)) * .9;
+  float n = sin(q.x + t * .5) + sin(q.y - t * .4) + sin((q.x - q.y) * .8 + t * .3) + sin((q.x + q.y) * .6 - t * .35);
+  return pow(1. - abs(sin(n * 1.3)), 7.);
+}
+vec2 amb(vec2 p, float t) {
+  vec2 g = vec2(.8, .6) * cos(dot(p, vec2(.8, .6)) * .08 + t * 1.2);
+  g += vec2(-.5, .85) * cos(dot(p, vec2(-.5, .85)) * .13 + t * 1.6) * .8;
+  g += vec2(.95, -.3) * cos(dot(p, vec2(.95, -.3)) * .23 - t * 2.2) * .5;
+  g += (vec2(noise(p * .06 + t * .25), noise(p * .06 + vec2(7.3, 3.1) - t * .25)) - .5) * 2.;
+  return g;
+}
+void main() {
+  vec2 q = vUv * 2. - 1.;
+  float e = dot(q, q);
+  if (e > 1.) { gl_FragColor = vec4(0.); return; }
+  vec2 sp = uBox.xy + vUv * uBox.zw;
+  vec2 wp = (uWorld.xy + vUv * uWorld.zw) / uS;
+  vec4 w = texture2D(uWave, vUv);
+  vec2 g = (w.rg - .5) * 11.;
+  float lap = (w.a - .5) * 8.;
+  g += amb(wp, uTime) * .055;
+  vec3 N = normalize(vec3(-g, 1.));
+  float depth = smoothstep(0., .55, 1. - e);
+  // refraction with a hint of dispersion
+  vec2 off = N.xy * 16. * uS * (.3 + depth) / uBox.zw;
+  off.y *= uT;
+  vec2 uv = vUv + off;
+  vec3 under = vec3(texture2D(uUnder, uv + off * .08).r, texture2D(uUnder, uv).g, texture2D(uUnder, uv - off * .08).b);
+  // light falling through the canopy: soft dapples, caustic net, rings focused by the waves
+  float dap = smoothstep(.3, .75, noise(wp * .007 + vec2(uTime * .015, -uTime * .01)));
+  vec2 cp = wp * .065 + g * .4 + vec2(noise(wp * .02), noise(wp * .02 + 9.)) * 2.;
+  float c = caus(cp, uTime) * caus(cp * 1.4 + 3.1, uTime * 1.2) * 3.6;
+  c = c * (.3 + dap) + max(0., -lap) * 1.2;
+  under *= mix(.86, 1.22, dap);
+  under += under * c * .9 + vec3(.85, 1., .7) * c * .07;
+  // depth absorption toward clear emerald
+  vec3 deep = vec3(.0, .3, .26);
+  vec3 col = mix(under * vec3(.86, 1.04, .92), deep, .06 + depth * .2);
+  // reflection of the ruins, strongest on the far water (grazing view)
+  vec2 rs = vec2(sp.x + N.x * 40. * uS, uFarY - (sp.y - uFarY) * .75 - N.y * 30. * uS);
+  vec3 refl = texture2D(uRefl, clamp(rs / uScreen, .002, .998)).rgb;
+  float near = clamp((sp.y - uBox.y) / uBox.w, 0., 1.);
+  float fres = mix(.34, .02, smoothstep(0., .45, near));
+  col = mix(col, refl * vec3(.8, .92, .86), fres);
+  // sun glints on the slopes of the waves
+  vec3 H = normalize(normalize(vec3(-.35, -.9, .5)) + vec3(0., .8, .6));
+  float spec = pow(max(dot(N, H), 0.), 260.) * 2.6;
+  col += vec3(1., .97, .85) * spec * (.35 + dap * .65);
+  // shade near the stone rim, deepest under the far wall
+  col *= mix(.68, 1., smoothstep(1., .86, e));
+  col *= 1. - .3 * smoothstep(.55, 1., e) * smoothstep(.1, -.7, q.y);
+  float a = smoothstep(1., .975, e);
+  gl_FragColor = vec4(col * a, a);
+}`;
+  function initGL() {
+    if (/[?&]flat\b/.test(location.search)) return false;
+    try { gl = gcv.getContext('webgl', { premultipliedAlpha: true, preserveDrawingBuffer: false, antialias: false, alpha: true }); } catch (e) { gl = null; }
+    if (!gl) return false;
+    const sh = (type, src) => {
+      const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.warn(gl.getShaderInfoLog(s)); return null; }
+      return s;
+    };
+    const vs = sh(gl.VERTEX_SHADER, VS), fs = sh(gl.FRAGMENT_SHADER, FS);
+    if (!vs || !fs) { gl = null; return false; }
+    glp = gl.createProgram(); gl.attachShader(glp, vs); gl.attachShader(glp, fs); gl.linkProgram(glp);
+    if (!gl.getProgramParameter(glp, gl.LINK_STATUS)) { console.warn(gl.getProgramInfoLog(glp)); gl = null; return false; }
+    gl.useProgram(glp);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(glp, 'aP');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    ['uUnder', 'uWave', 'uRefl'].forEach((n, i) => {
+      const t = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.uniform1i(gl.getUniformLocation(glp, n), i);
+      tex[n] = i;
+    });
+    for (const n of ['uBox', 'uWorld', 'uScreen', 'uT', 'uS', 'uTime', 'uFarY']) tex[n] = gl.getUniformLocation(glp, n);
+    gcv.addEventListener('webglcontextlost', e => { e.preventDefault(); gl = null; });
+    bgEl.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none';
+    gcv.style.cssText = 'position:fixed;pointer-events:none';
+    cv.before(bgEl, gcv);
+    return true;
+  }
+
+  function setupWater() {
+    if (!gl) return;
+    const T = view.T;
+    water.gD = Math.min(DPR, 1.5);
+    water.bx = pond.cx - pond.rx; water.by = pond.cy - pond.ry * T;
+    water.bw = pond.rx * 2; water.bh = pond.ry * 2 * T;
+    const pw = Math.max(2, Math.round(water.bw * water.gD)), ph = Math.max(2, Math.round(water.bh * water.gD));
+    gcv.width = pw; gcv.height = ph;
+    Object.assign(gcv.style, { left: water.bx + 'px', top: water.by + 'px', width: water.bw + 'px', height: water.bh + 'px' });
+    bgEl.width = cv.width; bgEl.height = cv.height;
+    bgEl.getContext('2d').drawImage(bgC, 0, 0);
+    if (!water.underC) water.underC = document.createElement('canvas');
+    water.underC.width = pw; water.underC.height = ph;
+    water.uctx = water.underC.getContext('2d');
+    water.floorC = paintFloor();
+    // wave grid, square cells in world units
+    water.cell = Math.max(2.6, pond.rx * 2 / 170);
+    water.nx = Math.ceil(pond.rx * 2 / water.cell) + 1;
+    water.ny = Math.ceil(pond.ry * 2 / water.cell) + 1;
+    const n = water.nx * water.ny;
+    water.h = new Float32Array(n); water.p = new Float32Array(n); water.mask = new Uint8Array(n);
+    water.px = new Uint8Array(n * 4);
+    for (let j = 0; j < water.ny; j++) for (let i = 0; i < water.nx; i++) {
+      const x = pond.cx - pond.rx + i * water.cell, y = pond.cy - pond.ry + j * water.cell;
+      water.mask[j * water.nx + i] = inWater(x, y, water.cell) ? 1 : 0;
+    }
+    water.pend = [];
+    gl.viewport(0, 0, pw, ph);
+    // the ruins above the pond, for the reflection
+    const rc = document.createElement('canvas');
+    rc.width = Math.max(2, Math.round(W / 2)); rc.height = Math.max(2, Math.round(H / 2));
+    const rg = rc.getContext('2d');
+    rg.drawImage(bgC, 0, 0, rc.width, rc.height);
+    rg.drawImage(rimC, 0, 0, rc.width, rc.height);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rc);
+  }
+
+  function waveDrop(x, y, rad, amp) {
+    if (!water.h) return;
+    const c = water.cell, gx = (x - pond.cx + pond.rx) / c, gy = (y - pond.cy + pond.ry) / c;
+    const r = Math.max(1.4, rad / c), R = Math.ceil(r * 2.5);
+    for (let j = Math.max(1, Math.floor(gy - R)); j <= Math.min(water.ny - 2, Math.ceil(gy + R)); j++) {
+      for (let i = Math.max(1, Math.floor(gx - R)); i <= Math.min(water.nx - 2, Math.ceil(gx + R)); i++) {
+        const k = j * water.nx + i;
+        if (!water.mask[k]) continue;
+        const d2 = ((i - gx) ** 2 + (j - gy) ** 2) / (r * r);
+        water.h[k] -= amp * Math.exp(-d2);
+      }
+    }
+  }
+  function waveAt(x, y) {
+    if (!water.h) return 0;
+    const i = Math.round((x - pond.cx + pond.rx) / water.cell), j = Math.round((y - pond.cy + pond.ry) / water.cell);
+    if (i < 0 || j < 0 || i >= water.nx || j >= water.ny) return 0;
+    return water.h[j * water.nx + i];
+  }
+  // every ripple in the game goes through here: real waves with WebGL, drawn rings in the 2D fallback
+  function addRipple(r) {
+    if (!gl) { ripples.push(r); return; }
+    const amp = (r.a || 0.5) * (r.big ? 3.4 : 1.5), rad = Math.max(3 * S, Math.min(9 * S, r.max * 0.065));
+    const t0 = r.delay || 0;
+    water.pend.push({ t: t0, x: r.x, y: r.y, rad, amp });
+    // a splash rebounds a couple of times, which leaves a train of rings instead of one
+    if (r.big) {
+      water.pend.push({ t: t0 + 0.14, x: r.x, y: r.y, rad: rad * 0.8, amp: -amp * 0.6 });
+      water.pend.push({ t: t0 + 0.3, x: r.x, y: r.y, rad: rad * 0.7, amp: amp * 0.35 });
+    }
+  }
+  function stepWaves() {
+    const { nx, ny, mask } = water;
+    let h = water.h, p = water.p;
+    const c2 = 0.15, damp = 0.993;
+    for (let j = 1; j < ny - 1; j++) {
+      let k = j * nx + 1;
+      for (let i = 1; i < nx - 1; i++, k++) {
+        if (!mask[k]) { p[k] = 0; continue; }
+        // 9-point stencil keeps rings round
+        const lap = (4 * (h[k - 1] + h[k + 1] + h[k - nx] + h[k + nx]) + h[k - nx - 1] + h[k - nx + 1] + h[k + nx - 1] + h[k + nx + 1] - 20 * h[k]) / 6;
+        p[k] = (2 * h[k] - p[k] + c2 * lap) * damp;
+      }
+    }
+    water.h = p; water.p = h;
+  }
+  function packWaves() {
+    const { nx, ny, h, px } = water;
+    const q = v => (v < -4 ? 0 : v > 4 ? 255 : 128 + v * 32) | 0;
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const k = j * nx + i, o = k * 4;
+        if (i === 0 || j === 0 || i === nx - 1 || j === ny - 1) { px[o] = px[o + 1] = px[o + 3] = 128; px[o + 2] = 128; continue; }
+        px[o] = q((h[k + 1] - h[k - 1]) * 0.5);
+        px[o + 1] = q((h[k + nx] - h[k - nx]) * 0.5);
+        px[o + 2] = q(h[k]);
+        px[o + 3] = q(h[k - 1] + h[k + 1] + h[k - nx] + h[k + nx] - 4 * h[k]);
+      }
+    }
+  }
+
+  // static lake bed, painted in world units: silt, sand grain, shaded pebbles, mossy stones, leaves, weed
+  function noiseCanvas(n, a) {
+    const c = document.createElement('canvas'); c.width = c.height = n;
+    const g = c.getContext('2d'), im = g.createImageData(n, n), d = im.data;
+    for (let i = 0; i < d.length; i += 4) { const v = Math.random() < 0.5 ? 0 : 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = Math.random() * a; }
+    g.putImageData(im, 0, 0);
+    return c;
+  }
+  const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const tone = (c, f, a = 1) => `rgba(${c.map(v => Math.max(0, Math.min(255, Math.round(v * f)))).join(',')},${a})`;
+  function stone(g, x, y, r, rot, hex, moss) {
+    const c = hexRGB(hex), ry = r * 0.72;
+    g.fillStyle = 'rgba(18,24,10,0.32)';
+    g.beginPath(); g.ellipse(x + r * 0.22, y + r * 0.3, r * 1.08, ry * 1.1, rot, 0, TAU); g.fill();
+    const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r * 1.1);
+    gr.addColorStop(0, tone(c, 1.3)); gr.addColorStop(0.55, tone(c, 1)); gr.addColorStop(1, tone(c, 0.55));
+    g.fillStyle = gr;
+    g.beginPath(); g.ellipse(x, y, r, ry, rot, 0, TAU); g.fill();
+    if (moss) {
+      const mg = g.createRadialGradient(x - r * 0.2, y - r * 0.25, 0, x - r * 0.1, y - r * 0.15, r * 0.9);
+      mg.addColorStop(0, 'rgba(118,140,60,0.6)'); mg.addColorStop(0.6, 'rgba(84,108,44,0.4)'); mg.addColorStop(1, 'rgba(84,108,44,0)');
+      g.fillStyle = mg;
+      g.beginPath(); g.ellipse(x - r * 0.1, y - r * 0.15, r * 0.9, ry * 0.85, rot, 0, TAU); g.fill();
+      for (let i = 0; i < r / 2; i++) {
+        g.fillStyle = Math.random() < 0.5 ? 'rgba(160,190,80,0.35)' : 'rgba(50,80,30,0.3)';
+        g.beginPath(); g.arc(x + rnd(-0.6, 0.5) * r, y + rnd(-0.5, 0.4) * ry, rnd(0.6, 1.6) * S, 0, TAU); g.fill();
+      }
+    }
+  }
+  function paintFloor() {
+    const fd = water.gD;
+    const c = document.createElement('canvas');
+    c.width = Math.round(pond.rx * 2 * fd); c.height = Math.round(pond.ry * 2 * fd);
+    const g = c.getContext('2d');
+    g.setTransform(fd, 0, 0, fd, -(pond.cx - pond.rx) * fd, -(pond.cy - pond.ry) * fd);
+    const { cx, cy, rx, ry } = pond;
+    g.save(); g.translate(cx, cy); g.scale(1, ry / rx);
+    let gr = g.createRadialGradient(-rx * 0.12, rx * 0.1, 0, 0, 0, rx);
+    gr.addColorStop(0, '#c4b06c'); gr.addColorStop(0.5, '#a0904f'); gr.addColorStop(0.82, '#66703a'); gr.addColorStop(1, '#2c3a20');
+    g.fillStyle = gr; g.fillRect(-rx, -rx, rx * 2, rx * 2);
+    g.restore();
+    // silt tones and sand grain
+    for (let i = 0; i < 60; i++) {
+      const [x, y] = randWater(0);
+      g.fillStyle = Math.random() < 0.5 ? 'rgba(70,90,40,0.12)' : 'rgba(210,195,140,0.1)';
+      g.beginPath(); g.ellipse(x, y, rnd(30, 90) * S, rnd(20, 60) * S, rnd(0, TAU), 0, TAU); g.fill();
+    }
+    g.save();
+    g.globalCompositeOperation = 'overlay';
+    g.fillStyle = g.createPattern(noiseCanvas(128, 50), 'repeat');
+    g.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+    g.restore();
+    const pal = ['#b9ad86', '#9a8f6c', '#7d7a62', '#c2b896', '#8a8f78', '#6f6a55', '#a89870', '#93977f'];
+    const items = [];
+    for (let i = 0; i < 520; i++) {
+      // pebbles gather toward the rim, where the bed slopes up
+      const a = rnd(0, TAU), rr = Math.pow(Math.random(), 0.45) * 0.97;
+      const x = cx + Math.cos(a) * rx * rr, y = cy + Math.sin(a) * ry * rr;
+      items.push({ x, y, r: Math.pow(Math.random(), 2) * 7 * S * (0.7 + rr * 0.6) + 1.2 * S, hex: pal[(Math.random() * pal.length) | 0], moss: false });
+    }
+    for (let i = 0; i < 16; i++) {
+      const a = rnd(0, TAU), rr = rnd(0.35, 0.95);
+      items.push({ x: cx + Math.cos(a) * rx * rr, y: cy + Math.sin(a) * ry * rr, r: rnd(14, 34) * S, hex: Math.random() < 0.5 ? '#6f7360' : '#7c7a64', moss: true });
+    }
+    for (let i = 0; i < 70; i++) {
+      const a = rnd(0, TAU), rr = rnd(0.86, 1.02);
+      items.push({ x: cx + Math.cos(a) * rx * rr, y: cy + Math.sin(a) * ry * rr, r: rnd(12, 26) * S, hex: Math.random() < 0.6 ? '#5f6552' : '#76735d', moss: Math.random() < 0.7 });
+    }
+    items.sort((p, q) => p.y - q.y);
+    for (const it of items) stone(g, it.x, it.y, it.r, rnd(-0.6, 0.6), it.hex, it.moss);
+    // sunken leaves
+    for (let i = 0; i < 18; i++) {
+      const [x, y] = randWater(20 * S), l = rnd(7, 13) * S, a = rnd(0, TAU);
+      g.fillStyle = ['rgba(150,104,40,0.75)', 'rgba(120,90,40,0.7)', 'rgba(170,140,60,0.7)'][i % 3];
+      g.beginPath(); g.ellipse(x, y, l, l * 0.38, a, 0, TAU); g.fill();
+      g.strokeStyle = 'rgba(70,45,15,0.5)'; g.lineWidth = 0.7;
+      g.beginPath(); g.moveTo(x - Math.cos(a) * l, y - Math.sin(a) * l); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+    // weed tufts near the rim
+    for (let i = 0; i < 40; i++) {
+      const a = rnd(0, TAU), rr = rnd(0.78, 0.95), x = cx + Math.cos(a) * rx * rr, y = cy + Math.sin(a) * ry * rr;
+      for (let k = 0; k < 7; k++) {
+        const ang = Math.atan2(cy - y, cx - x) + rnd(-0.7, 0.7), len = rnd(10, 26) * S;
+        g.strokeStyle = Math.random() < 0.5 ? 'rgba(60,100,35,0.55)' : 'rgba(95,135,50,0.45)';
+        g.lineWidth = rnd(1, 2.2) * S;
+        g.beginPath(); g.moveTo(x, y);
+        g.quadraticCurveTo(x + Math.cos(ang + 0.4) * len * 0.5, y + Math.sin(ang + 0.4) * len * 0.5, x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+        g.stroke();
+      }
+    }
+    // the bed falls away into shadow at the rim
+    g.save(); g.translate(cx, cy); g.scale(1, ry / rx);
+    gr = g.createRadialGradient(0, 0, rx * 0.7, 0, 0, rx);
+    gr.addColorStop(0, 'rgba(12,28,14,0)'); gr.addColorStop(1, 'rgba(12,28,14,0.55)');
+    g.fillStyle = gr; g.fillRect(-rx, -rx, rx * 2, rx * 2);
+    g.restore();
+    return c;
+  }
+
+  function drawLilyShadows() {
+    ctx.fillStyle = 'rgba(8,22,10,0.26)';
+    const ox = 12 * S, oy = 18 * S;
+    for (const l of lilies) {
+      const rot = l.rot + Math.sin(tNow * 0.4 + l.ph) * 0.06;
+      const bx = l.x + Math.sin(tNow * 0.3 + l.ph) * 2 * S + ox, by = l.y + Math.cos(tNow * 0.25 + l.ph) * 2 * S + oy;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.arc(bx, by, l.r * 1.05, rot + 0.28, rot + TAU - 0.28); ctx.closePath(); ctx.fill();
+    }
+    for (const b of blossoms) { ctx.beginPath(); ctx.arc(b.x + ox, b.y + oy, b.r * 0.9, 0, TAU); ctx.fill(); }
+  }
+
+  function renderWater(dt) {
+    const T = view.T, gD = water.gD, u = water.uctx;
+    // what lies under the surface
+    const saved = ctx;
+    ctx = u;
+    u.setTransform(gD, 0, 0, gD * T, -water.bx * gD, gD * (pond.cy * (1 - T) - water.by));
+    u.drawImage(water.floorC, pond.cx - pond.rx, pond.cy - pond.ry, pond.rx * 2, pond.ry * 2);
+    drawBowl();
+    drawSunkCoins(dt);
+    drawLilyShadows();
+    for (const k of koi) drawKoiShadow(k);
+    u.fillStyle = 'rgba(30,96,72,0.08)';
+    u.fillRect(pond.cx - pond.rx, pond.cy - pond.ry, pond.rx * 2, pond.ry * 2);
+    for (const k of koi) drawKoi(k);
+    ctx = saved;
+    // waves: delayed drops, koi wakes, the odd insect or seed touching the surface
+    for (let i = water.pend.length - 1; i >= 0; i--) {
+      const d = water.pend[i];
+      if ((d.t -= dt) <= 0) { waveDrop(d.x, d.y, d.rad, d.amp); water.pend.splice(i, 1); }
+    }
+    water.wakeT -= dt;
+    if (water.wakeT <= 0) {
+      water.wakeT = 0.12;
+      for (const k of koi) if (k.speed > 70 * S) waveDrop(k.pts[0].x, k.pts[0].y, 3 * S, 0.25 * k.speed / (120 * S));
+    }
+    water.ambT -= dt;
+    if (water.ambT <= 0) { water.ambT = rnd(1.5, 4); const [x, y] = randWater(30 * S); waveDrop(x, y, 2 * S, rnd(0.3, 0.7)); }
+    water.acc = Math.min(water.acc + dt, 3 / 60);
+    while (water.acc >= 1 / 60) { stepWaves(); water.acc -= 1 / 60; }
+    packWaves();
+    // shade
+    gl.activeTexture(gl.TEXTURE0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, water.underC);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, water.nx, water.ny, 0, gl.RGBA, gl.UNSIGNED_BYTE, water.px);
+    gl.uniform4f(tex.uBox, water.bx, water.by, water.bw, water.bh);
+    gl.uniform4f(tex.uWorld, pond.cx - pond.rx, pond.cy - pond.ry, pond.rx * 2, pond.ry * 2);
+    gl.uniform2f(tex.uScreen, W, H);
+    gl.uniform1f(tex.uT, T); gl.uniform1f(tex.uS, S); gl.uniform1f(tex.uTime, tNow);
+    gl.uniform1f(tex.uFarY, water.by - view.wallH);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now; tNow += dt;
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.drawImage(bgC, 0, 0, W, H);
-    // water layer, in world units squashed into the 3/4 view
-    ctx.save();
-    ctx.setTransform(DPR, 0, 0, DPR * view.T, 0, DPR * pond.cy * (1 - view.T));
-    waterClip();
-    drawWater();
-    drawBowl();
-    drawSunkCoins(dt);
     for (const k of koi) updateKoi(k, dt);
-    for (const k of koi) drawKoiShadow(k);
-    for (const k of koi) drawKoi(k);
-    ctx.fillStyle = 'rgba(40,130,80,0.1)';
-    ctx.fillRect(pond.cx - pond.rx, pond.cy - pond.ry, pond.rx * 2, pond.ry * 2);
-    drawCaustics(dt);
-    drawGlows(dt);
-    drawLilies();
-    drawLanterns(dt);
-    ctx.restore();
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    drawRipples(dt);
-    drawBlossoms(dt);
-    drawGlints();
+    if (gl) ctx.clearRect(0, 0, W, H); else ctx.drawImage(bgC, 0, 0, W, H);
+    if (gl) {
+      renderWater(dt);
+      // floating things, in world units squashed into the 3/4 view
+      ctx.save();
+      ctx.setTransform(DPR, 0, 0, DPR * view.T, 0, DPR * pond.cy * (1 - view.T));
+      waterClip();
+      drawGlows(dt);
+      drawLilies();
+      drawLanterns(dt);
+      ctx.restore();
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      drawBlossoms(dt);
+    } else {
+      // 2D fallback: painted water and drawn ripple rings
+      ctx.save();
+      ctx.setTransform(DPR, 0, 0, DPR * view.T, 0, DPR * pond.cy * (1 - view.T));
+      waterClip();
+      drawWater();
+      drawBowl();
+      drawSunkCoins(dt);
+      for (const k of koi) drawKoiShadow(k);
+      for (const k of koi) drawKoi(k);
+      ctx.fillStyle = 'rgba(40,130,80,0.1)';
+      ctx.fillRect(pond.cx - pond.rx, pond.cy - pond.ry, pond.rx * 2, pond.ry * 2);
+      drawCaustics(dt);
+      drawGlows(dt);
+      drawLilies();
+      drawLanterns(dt);
+      ctx.restore();
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      drawRipples(dt);
+      drawBlossoms(dt);
+      drawGlints();
+    }
     ctx.drawImage(rimC, 0, 0, W, H);
     drawWaterfall(dt);
     ctx.drawImage(fgC, 0, 0, W, H);
@@ -1318,6 +1810,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const [x, y] = randWater(40 * S); toss(x, y); }
   });
   window.addEventListener('resize', layout);
+  initGL();
   layout();
   requestAnimationFrame(frame);
 })();
