@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.12 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.13 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -226,7 +226,10 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     const v = srnd(-9, 9), base = [126 + v, 131 + v, 104 + v];
     const pts = [[-.51,.10],[-.44,-.25],[-.25,-.49],[.15,-.46],[.43,-.28],[.53,.09],[.32,.43],[-.27,.46]];
     const shape = pts.map(([px, py]) => [x + (px + srnd(-.045,.045)) * w, y + (py + srnd(-.04,.04)) * h]);
-    const path = ps => { g.beginPath(); ps.forEach(([px,py],i) => i ? g.lineTo(px,py) : g.moveTo(px,py)); g.closePath(); };
+    const path = ps => {
+      g.beginPath(); const last=ps[ps.length-1];g.moveTo((last[0]+ps[0][0])/2,(last[1]+ps[0][1])/2);
+      ps.forEach((pt,i)=>{const next=ps[(i+1)%ps.length];g.quadraticCurveTo(pt[0],pt[1],(pt[0]+next[0])/2,(pt[1]+next[1])/2);});g.closePath();
+    };
     g.fillStyle = mixc([15,29,19], FOG, fog, .34);
     g.beginPath(); g.ellipse(x + w * .09, y + h * .4, w * .58, h * .23, .1, 0, TAU); g.fill();
     const gr = g.createLinearGradient(x - w * .3,y - h * .5,x + w * .2,y + h * .5);
@@ -234,8 +237,8 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     path(shape); g.fillStyle=gr; g.fill();
     g.save(); g.clip();
     const ridge=[x-w*.04,y-h*.06];
-    path([shape[0],shape[1],shape[2],shape[3],ridge]); g.fillStyle=mixc([193+v,190+v,149+v],FOG,fog,.38); g.fill();
-    path([ridge,shape[3],shape[4],shape[5],shape[6]]); g.fillStyle=mixc([57,69,48],FOG,fog,.24); g.fill();
+    path([shape[0],shape[1],shape[2],shape[3],ridge]); g.fillStyle=mixc([193+v,190+v,149+v],FOG,fog,.16); g.fill();
+    path([ridge,shape[3],shape[4],shape[5],shape[6]]); g.fillStyle=mixc([57,69,48],FOG,fog,.10); g.fill();
     // Patchy moss follows the lit upper cracks instead of a round green cap.
     if(srnd(0,1)<moss) for(let i=0;i<18;i++) {
       const px=x+srnd(-.43,.37)*w, py=y+srnd(-.45,.12)*h, r=srnd(.045,.13)*w;
@@ -613,17 +616,17 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       layers = [];
     }
     // mossy rock pile behind the pond; the waterfall pours out of the arch on top of it
-    const ow = Math.max(150, Math.min(340, W * 0.3)), ly = Math.max(top * 0.72, wTop - Math.max(100, H * 0.13));
-    fall.x = pond.cx; fall.w = Math.max(34, ow * 0.2); fall.y1 = ly + 4 * sc; fall.y2 = wTop + 6 * sc;
+    const ow = Math.max(110, Math.min(190, W * 0.22)), ly = wTop - 36 * sc;
+    fall.x = pond.cx; fall.w = Math.max(24, ow * 0.19); fall.y1 = ly + 4 * sc; fall.y2 = wTop + 6 * sc;
     const span = Math.min(W * 0.42, ow * (portrait ? 0.85 : 1.05));
     if (!forestPlateReady) ruins(g, pond.cx, ly, fall.w * 1.7, span, 0.16);
     const pile = [];
     // rubble along the foot of the wall
     if (!forestPlateReady) for (let x = pond.cx - span; x <= pond.cx + span; x += srnd(14, 30) * sc) pile.push({ x, y: ly + srnd(8, 16) * sc, w: srnd(22, 42) * sc });
-    for (let i = 0; i < 36; i++) {
+    for (let i = 0; i < 18; i++) {
       const t = Math.pow(srnd(0, 1), 1.3), y = ly + 8 * sc + (wTop - ly - 8 * sc) * t;
       const spread = ow * (0.35 + t * 0.4);
-      pile.push({ x: pond.cx + srnd(-spread, spread), y, w: srnd(40, 80) * sc * (0.7 + t * 0.5) });
+      pile.push({ x: pond.cx + srnd(-spread, spread), y, w: srnd(32, 58) * sc * (0.7 + t * 0.5) });
     }
     for (let i = 0; i < 22; i++) {
       const a = srnd(Math.PI * 1.05, Math.PI * 1.95), e = R.path;
@@ -670,13 +673,17 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
 
   function paintRim() {
     const [c,g]=offscreen(), sc=view.sc, e=rings().water;
-    const n=Math.round(Math.PI*(e[2]+e[3])/(32*sc)), stones=[];
+    const n=Math.round(Math.PI*(e[2]+e[3])/(43*sc)), stones=[];
     for(let i=0;i<n;i++) {
       const a=i/n*TAU+srnd(-.012,.012), sa=Math.sin(a);
       const x=e[0]+Math.cos(a)*(e[2]+5*sc), y=e[1]+sa*(e[3]+4*sc)-view.wallH*(sa<0?1:.2);
       if(sa<0&&Math.abs(x-fall.x)<fall.w*.7) continue;
-      const w=srnd(26,44)*sc*(i%6===0?1.35:1);
-      stones.push({x,y,w,h:w*srnd(.43,.64),a});
+      const w=srnd(39,61)*sc*(i%6===0?1.2:1);
+      const h=w*srnd(.43,.58);
+      // A broad embedded base, overlapping upper stone and occasional gap filler.
+      stones.push({x,y,w,h,a});
+      if(i%3!==1) stones.push({x:x+Math.cos(a)*8*sc+srnd(-4,4)*sc,y:y-h*.48+Math.sin(a)*5*sc,w:w*srnd(.58,.82),h:h*.74,a});
+      if(i%4===0) stones.push({x:x-w*.5,y:y+h*.2,w:w*.32,h:h*.44,a});
     }
     stones.sort((a,b)=>a.y-b.y);
     for(const st of stones) {
@@ -810,7 +817,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   ];
 
   function makeKoi(kind) {
-    const len = rnd(78, 104) * S;
+    const len = rnd(78, 104) * S * 0.8;
     const segs = 14;
     const [x, y] = randWater(60 * S);
     const heading = rnd(0, TAU);
@@ -1203,6 +1210,9 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     pond.cx = W / 2; pond.rx = rx;
     pond.cy = H - fore - sry - view.rim;
     pond.ry = sry / view.T;
+    // F9 enlarge uniformly around the same center, retaining the throwing perspective.
+    const grow=Math.min(1.08,(W/2-24*view.sc)/pond.rx,(H-52-pond.cy)/(pond.ry*view.T));
+    if(grow>1) { pond.rx*=grow; pond.ry*=grow; }
     view.wallH = 4 + sry * 0.06;
     S = Math.max(0.55, Math.min(1.25, Math.min(pond.rx, pond.ry) / 260));
     bowl.x = pond.cx; bowl.y = pond.cy; bowl.R = Math.max(30, Math.min(pond.rx, pond.ry) * 0.17);
@@ -1388,13 +1398,21 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       ctx.bezierCurveTo(x - hw * 1.15, y2 - 10 * sc, x - hw * 1.05, y1 + (y2 - y1) * 0.4, x - hw, y1);
       ctx.closePath();
     };
+    // F9 a visible shallow runnel feeds the low rock lip.
+    ctx.save();
+    const run=ctx.createLinearGradient(0,y1-24*sc,0,y1+4*sc);
+    run.addColorStop(0,'rgba(64,111,91,.75)');run.addColorStop(1,'rgba(173,211,183,.65)');
+    ctx.fillStyle=run;ctx.beginPath();ctx.moveTo(x-hw*.56,y1-23*sc);ctx.lineTo(x+hw*.45,y1-23*sc);ctx.lineTo(x+hw,y1);ctx.lineTo(x-hw,y1);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='rgba(222,241,220,.45)';ctx.lineWidth=.8*sc;
+    for(let i=0;i<4;i++){const yy=y1-23*sc+((tNow*15+i*6)%24)*sc;ctx.beginPath();ctx.moveTo(x-hw*.44,yy);ctx.quadraticCurveTo(x,yy+2*sc,x+hw*.4,yy);ctx.stroke();}
+    ctx.restore();
     ctx.save();
     sheet(); ctx.clip();
     let g = ctx.createLinearGradient(0, y1, 0, y2);
-    g.addColorStop(0, 'rgba(190,225,210,0.3)'); g.addColorStop(1, 'rgba(230,248,242,0.5)');
+    g.addColorStop(0, 'rgba(160,202,183,0.20)'); g.addColorStop(1, 'rgba(221,239,226,0.36)');
     ctx.fillStyle = g; ctx.fillRect(x - w, y1 - 6 * sc, w * 2, y2 - y1 + 14 * sc);
     const th = 150 * sc;
-    for (const [sp, a, k] of [[1, 0.75, 0], [1.55, 0.5, 0.37]]) {
+    for (const [sp, a, k] of [[1, 0.42, 0], [1.55, 0.26, 0.37]]) {
       const o = (tNow * 170 * sp * sc + k * th) % th;
       ctx.globalAlpha = a;
       for (let yy = y1 - th + o; yy < y2 + 8 * sc; yy += th) ctx.drawImage(fallTex, x - hw * 1.3, yy, w * 1.3, th);
@@ -1417,7 +1435,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     }
     // mist rising off the plunge
     if (!fall.mist) fall.mist = [];
-    if (fall.mist.length < 24 && Math.random() < dt * 14) fall.mist.push({ x: x + rnd(-hw, hw), y: y2, r: rnd(6, 12) * sc, vx: rnd(-8, 8) * sc, vy: -rnd(8, 20) * sc, life: 1 });
+    if (fall.mist.length < 10 && Math.random() < dt * 5) fall.mist.push({ x: x + rnd(-hw, hw), y: y2, r: rnd(6, 12) * sc, vx: rnd(-8, 8) * sc, vy: -rnd(8, 20) * sc, life: 1 });
     for (let i = fall.mist.length - 1; i >= 0; i--) {
       const m = fall.mist[i];
       m.life -= dt * 0.45; m.x += m.vx * dt; m.y += m.vy * dt; m.r += 10 * sc * dt;
@@ -1604,7 +1622,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   function drawLotus(x, y, r, rot) {
     if(botanicalReady) {
       const index=3+Math.min(2,Math.floor(((rot%TAU+TAU)%TAU)/TAU*3));
-      const w=r*(index===3?2.8:index===4?2.4:1.65),h=r*(index===3?2.25:2.7);
+      const w=r*.75*(index===3?2.8:index===4?2.4:1.65),h=r*.75*(index===3?2.25:2.7);
       ctx.fillStyle='rgba(0,28,19,.2)';ctx.beginPath();ctx.ellipse(x,y+2*S,r*.62,r*.22,0,0,TAU);ctx.fill();
       ctx.save();ctx.translate(x,y+4*S);ctx.scale(1,-.4);ctx.globalAlpha=.14;
       botanicalSprite(ctx,index,0,h*.4,w,h);ctx.restore();
@@ -2119,35 +2137,23 @@ void main() {
   /* ---------- F-art: a deer now and then, at the edge of the misty trees ---------- */
   const deer = { on: false, t: rnd(6, 14), x: 0, dir: 1, mode: 'walk', timer: 0, ph: 0, stopX: 0, head: 0 };
   function drawDeer(dt) {
-    const d = deer, sc = view.sc;
-    if (!d.on) {
-      d.t -= dt;
-      if (d.t > 0) return;
-      d.on = true; d.dir = Math.random() < 0.5 ? 1 : -1; d.mode = 'walk';
-      d.x = d.dir > 0 ? -40 * sc : W + 40 * sc;
-      d.stopX = d.dir > 0 ? W * rnd(0.12, 0.3) : W * rnd(0.7, 0.88);
-    }
-    const sp = 22 * sc;
-    if (d.mode === 'walk') {
-      d.x += d.dir * sp * dt; d.ph += dt * 5.5; d.head += (0 - d.head) * dt * 3;
-      if (d.stopX && (d.x - d.stopX) * d.dir > 0) { d.mode = 'graze'; d.timer = rnd(4, 7); d.stopX = 0; }
-      if (d.x < -60 * sc || d.x > W + 60 * sc) { d.on = false; d.t = rnd(25, 45); return; }
-    } else {
-      d.timer -= dt;
-      const want = d.timer > 1.5 && Math.sin(d.timer * 1.3) > -0.6 ? 1 : 0;
-      d.head += (want - d.head) * dt * 2.5;
-      if (d.timer <= 0) { d.mode = 'walk'; d.dir = -d.dir; }
-    }
+    const d=deer,sc=view.sc;
     if(!deerReady) return;
-    // Ground the deer on the clearing just behind the pool; never inside the water.
-    const gy=pond.cy-pond.ry*view.T-22*sc, x=d.x;
-    const frame=d.mode==='graze' ? (d.head>.45?3:0) : (Math.sin(d.ph)>0?1:2);
-    const [sx,sy,sw,sh]=deerRects[frame], width=84*sc, height=width*sh/sw;
-    const fade=Math.min(1,Math.max(0,d.x/(55*sc)),Math.max(0,(W-d.x)/(55*sc)));
-    ctx.save();ctx.globalAlpha=.86*fade;ctx.translate(x,gy);ctx.scale(d.dir,1);
-    ctx.fillStyle='rgba(20,36,23,.25)';ctx.beginPath();ctx.ellipse(0,1,27*sc,4*sc,0,0,TAU);ctx.fill();
-    const bob=d.mode==='walk'?Math.abs(Math.sin(d.ph))*1.1*sc:Math.sin(tNow*1.3)*.4*sc;
-    ctx.drawImage(deerAtlas,sx,sy,sw,sh,-width/2,-height-bob,width,height);
+    if(!d.on) {
+      d.t-=dt;if(d.t>0)return;
+      d.on=true;d.timer=0;d.dir=Math.random()<.5?1:-1;
+      d.x=W*(d.dir>0?.19:.81);
+    }
+    d.timer+=dt;
+    if(d.timer>19){d.on=false;d.t=rnd(22,38);return;}
+    // A distant animal stands and grazes; no two-pose walking or gliding.
+    const fade=Math.min(1,d.timer/2,(19-d.timer)/2),width=49*sc;
+    const gy=pond.cy-pond.ry*view.T-42*sc;
+    const grazing=d.timer>6&&d.timer<14;
+    const [sx,sy,sw,sh]=deerRects[grazing?3:0],height=width*sh/sw;
+    ctx.save();ctx.globalAlpha=.75*fade;ctx.translate(d.x,gy);ctx.scale(d.dir,1);
+    ctx.fillStyle='rgba(24,43,26,.22)';ctx.beginPath();ctx.ellipse(0,1,16*sc,2.2*sc,0,0,TAU);ctx.fill();
+    ctx.drawImage(deerAtlas,sx,sy,sw,sh,-width/2,-height+Math.sin(tNow*1.2)*.18*sc,width,height);
     ctx.restore();
   }
 
