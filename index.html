@@ -300,9 +300,10 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   // Loading once before rebuilding preserves both rendering paths and resize behavior.
   forestPlate.onload = () => { forestPlateReady = true; layout(); };
   function paintForestPlate(g) {
-    // Preserve the complete clearing and its framing at every aspect ratio.
-    // One continuous plate avoids seams between the woodland and ground.
-    g.drawImage(forestPlate, 0, 0, W, H);
+    // Cover without stretching: portrait crops the scene, not the tree proportions.
+    const scale=Math.max(W/forestPlate.naturalWidth,H/forestPlate.naturalHeight);
+    const sw=W/scale,sh=H/scale;
+    g.drawImage(forestPlate,(forestPlate.naturalWidth-sw)/2,(forestPlate.naturalHeight-sh)/2,sw,sh,0,0,W,H);
   }
 
   /* ---------- F9 forest enclosure and layered understory ---------- */
