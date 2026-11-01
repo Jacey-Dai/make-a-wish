@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.9 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.10 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -277,6 +277,56 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     const g = c.getContext('2d'); g.setTransform(DPR, 0, 0, DPR, M * DPR, 0);
     return [c, g];
   }
+  /* ---------- F9 forest enclosure and layered understory ---------- */
+  function leafSpray(g, x, y, radius, fog = 0, shade = 1) {
+    // Volumes have a shaded interior and small leaves catching light above.
+    const gr = g.createRadialGradient(x - radius * .25, y - radius * .3, 0, x, y, radius);
+    gr.addColorStop(0, mixc([82 * shade, 115 * shade, 56 * shade], FOG, fog, .8));
+    gr.addColorStop(1, mixc([24, 48, 30], FOG, fog, 0));
+    g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, radius, radius * .7, 0, 0, TAU); g.fill();
+    for (let i = 0; i < 38; i++) {
+      const a = srnd(0, TAU), d = Math.sqrt(srnd(0, 1)) * radius;
+      const lx = x + Math.cos(a) * d, ly = y + Math.sin(a) * d * .6, r = srnd(2, 5) * view.sc;
+      const lit = (ly < y && srnd(0, 1) > .4);
+      const col = lit ? [115 * shade, 150 * shade, 68 * shade] : [34 * shade, 71 * shade, 39 * shade];
+      g.fillStyle = mixc(col, FOG, fog, srnd(.55, .95));
+      g.beginPath(); g.ellipse(lx, ly, r * 1.8, r * .65, a * .5, 0, TAU); g.fill();
+    }
+  }
+  function forestFraming(g) {
+    const sc = view.sc, portrait = H > W * 1.05;
+    for (const side of [-1, 1]) {
+      g.save(); g.translate(side < 0 ? 0 : W, 0); g.scale(-side, 1);
+      const width = Math.min(W * .065, 68 * sc), base = H * .70;
+      const bark = g.createLinearGradient(-width * .3, 0, width, 0);
+      bark.addColorStop(0, '#172b23'); bark.addColorStop(.65, '#344437'); bark.addColorStop(1, '#667052');
+      g.fillStyle = bark;
+      g.beginPath(); g.moveTo(-25, base + 30 * sc);
+      g.quadraticCurveTo(width * 1.7, base - 15 * sc, width * .72, H * .35);
+      g.bezierCurveTo(width * .5, H * .2, width * 1.8, H * .1, width * 1.4, -20);
+      g.lineTo(-25, -20); g.closePath(); g.fill();
+      // A branch bends overhead; the middle remains open to the distant light.
+      g.strokeStyle = '#344637'; g.lineCap = 'round'; g.lineWidth = width * .25;
+      g.beginPath(); g.moveTo(width * .8, H * .19);
+      g.bezierCurveTo(W * .10, H * .035, W * .19, H * .10, W * .28, -.01 * H); g.stroke();
+      for (let i = 0; i < 8; i++) {
+        const t = i / 8, x = W * (.025 + t * .23), y = H * (.075 - t * .055);
+        leafSpray(g, x, y, srnd(24, 46) * sc * (portrait ? .8 : 1), 0, .75);
+      }
+      // Hanging ivy varies in length, never crossing the playable water.
+      for (let i = 0; i < 7; i++) {
+        const x = srnd(width, W * .19), y0 = H * srnd(.01, .05), len = srnd(20, 100) * sc;
+        g.strokeStyle = 'rgba(73,99,49,.65)'; g.lineWidth = .8 * sc;
+        g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x - 7 * sc, y0 + len * .6, x + 3 * sc, y0 + len); g.stroke();
+        for (let y = 0; y < len; y += 8 * sc) {
+          g.fillStyle = mixc([72, 111, 48], [141, 166, 82], srnd(0, .5), .85);
+          g.beginPath(); g.ellipse(x + Math.sin(y * .06) * 4 * sc, y0 + y, 4 * sc, 2 * sc, .7, 0, TAU); g.fill();
+        }
+      }
+      g.restore();
+    }
+  }
+
   function treeRow(g, L, top, X0, X1) {
     const sc = view.sc;
     for (let i = 0; i < (X1 - X0) / 16; i++) {
@@ -294,8 +344,14 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       tg.addColorStop(0, mixc(L.col.map(v => v * 1.5), FOG, L.fog)); tg.addColorStop(0.4, mixc(L.col, FOG, L.fog)); tg.addColorStop(1, mixc(L.col.map(v => v * 0.55), FOG, L.fog));
       g.fillStyle = tg;
       g.beginPath(); g.moveTo(x - w * 0.35, -10); g.lineTo(x + w * 0.35, -10);
-      g.lineTo(x + w * 0.5, b - w * 0.4); g.quadraticCurveTo(x + w * 0.9, b, x + w * 1.1, b);
-      g.lineTo(x - w * 1.1, b); g.quadraticCurveTo(x - w * 0.9, b, x - w * 0.5, b - w * 0.4); g.closePath(); g.fill();
+      g.bezierCurveTo(x + w * 1.2, b * .3, x - w * .6, b * .65, x + w * 0.5, b - w * 0.4); g.quadraticCurveTo(x + w * 0.9, b, x + w * 1.1, b);
+      g.lineTo(x - w * 1.1, b); g.quadraticCurveTo(x - w * 0.9, b, x - w * 0.5, b - w * 0.4);
+      g.bezierCurveTo(x - w * 1.2, b * .65, x + w * .2, b * .3, x - w * .35, -10); g.closePath(); g.fill();
+      g.strokeStyle = mixc(L.col, FOG, L.fog); g.lineWidth = w * .3;
+      for (const dir of [-1, 1]) {
+        g.beginPath(); g.moveTo(x, b * .45);
+        g.quadraticCurveTo(x + dir * w * 2, b * .28, x + dir * w * 4, b * .18); g.stroke();
+      }
       if (srnd(0, 1) < 0.6) {
         g.fillStyle = mixc([110, 150, 60], FOG, L.fog, 0.7);
         g.fillRect(x - w * 0.5, b - srnd(10, 40) * sc, w * 0.5, srnd(8, 30) * sc);
@@ -397,9 +453,9 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     const portrait = H > W * 1.05;
     layers = [];
     const rows = [
-      { n: W / 14, w: [3, 8], base: top * 0.5, fog: 0.78, blur: 3.5, col: [86, 104, 74], depth: 1 },
+      { n: W / 14, w: [3, 8], base: top * 0.5, fog: 0.84, blur: 4.2, col: [86, 104, 74], depth: 1 },
       { n: W / 22, w: [6, 13], base: top * 0.64, fog: 0.58, blur: 2.4, col: [72, 88, 60], depth: 0.72 },
-      { n: W / 40, w: [11, 22], base: top * 0.8, fog: 0.36, blur: 1.4, col: [58, 70, 48], depth: 0.48 },
+      { n: W / 40, w: [11, 22], base: top * 0.8, fog: 0.26, blur: 1.1, col: [58, 70, 48], depth: 0.48 },
     ];
     view.deerY = top * 0.66;
     let gr, prevBase = 0;
@@ -501,6 +557,26 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       g.beginPath(); g.ellipse(x, y, l, l * 0.4, a, 0, TAU); g.fill();
     }
     grain(g, 0.05);
+    // F9 irregular shadow banks connect the trees to the clearing.
+    for (const side of [0, 1]) {
+      const sx = W * side, sy = top + H * .15;
+      const shadow = g.createRadialGradient(sx, sy, 0, sx, sy, W * .42);
+      shadow.addColorStop(0, 'rgba(12,34,25,.72)'); shadow.addColorStop(.55, 'rgba(18,42,26,.32)'); shadow.addColorStop(1, 'rgba(18,42,26,0)');
+      g.fillStyle = shadow; g.fillRect(0, top, W, H - top);
+    }
+    const vegetation = [];
+    for (let i = 0; i < 44; i++) {
+      const x = srnd(-12, W + 12), y = top + srnd(8, Math.max(20, wTop - top + 15));
+      const edge = Math.abs(x - pond.cx) / pond.rx;
+      if (edge < .52 || ((x - pond.cx) / (R.path[2] + 18)) ** 2 + ((y - R.path[1]) / (R.path[3] + 18)) ** 2 < 1) continue;
+      vegetation.push({x, y, r: srnd(20, 46) * sc});
+    }
+    vegetation.sort((a, b) => a.y - b.y);
+    for (const v of vegetation) {
+      boulder(g, v.x, v.y + 8 * sc, v.r * 1.2, v.r * .56, .08, .95);
+      leafSpray(g, v.x, v.y - v.r * .18, v.r, .12, .85);
+      if (srnd(0, 1) > .45) fern(g, v.x, v.y, v.r * 1.35, srnd(-2.3, -.8), [78, 119, 51], .08);
+    }
     // mossy rock pile behind the pond; the waterfall pours out of the arch on top of it
     const ow = Math.max(150, Math.min(340, W * 0.3)), ly = Math.max(top * 0.72, wTop - Math.max(100, H * 0.13));
     fall.x = pond.cx; fall.w = Math.max(34, ow * 0.2); fall.y1 = ly + 4 * sc; fall.y2 = wTop + 6 * sc;
@@ -621,6 +697,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       for (let i = 0; i < 4; i++) fern(lg, x0 + dir * srnd(0, w * 0.5), H - srnd(0, h * 0.6), srnd(60, 110) * sc, dir > 0 ? srnd(-2, -0.9) : srnd(-2.2, -1.1), [62, 112, 40]);
     };
     pileAt(0, 1); pileAt(W, -1);
+    forestFraming(lg);
     // near the lens and out of the sun
     lg.save(); lg.globalCompositeOperation = 'source-atop';
     lg.fillStyle = 'rgba(14,30,12,0.42)'; lg.fillRect(0, 0, W, H);
