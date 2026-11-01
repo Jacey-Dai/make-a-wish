@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.15 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.15.1 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1384,14 +1384,19 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     ctx.restore();
   }
   function drawGlints() {
-    ctx.save();ctx.globalCompositeOperation='screen';
-    for(const s of glints) {
-      const b=Math.pow(Math.max(0,Math.sin(tNow*s.sp+s.ph)),8);
-      if(b<.08)continue;
-      const [x,y]=toScreen(s.x+Math.sin(tNow*.7+s.ph)*1.7*S,s.y);
-      const l=(1.3+4*b)*S;
-      ctx.strokeStyle=`rgba(250,244,199,${b*.42})`;ctx.lineWidth=(.5+.5*b)*S;
-      ctx.beginPath();ctx.moveTo(x-l,y);ctx.quadraticCurveTo(x,y-l*.18,x+l,y+.3*S);ctx.stroke();
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of glints) {
+      const b = Math.pow(Math.max(0, Math.sin(tNow * s.sp + s.ph)), 14);
+      if (b < 0.03) {
+        if (Math.random() < 0.002) { [s.x, s.y] = randWater(20); }
+        continue;
+      }
+      const [x, y] = toScreen(s.x, s.y), l = (3 + 7 * b) * S;
+      ctx.strokeStyle = `rgba(255,253,225,${b})`; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x - l, y); ctx.lineTo(x + l, y); ctx.moveTo(x, y - l * 0.6); ctx.lineTo(x, y + l * 0.6); ctx.stroke();
+      ctx.fillStyle = `rgba(255,255,235,${b})`;
+      ctx.beginPath(); ctx.arc(x, y, 1.3, 0, TAU); ctx.fill();
     }
     ctx.restore();
   }
@@ -1912,15 +1917,8 @@ void main() {
   col = mix(col, refl * vec3(.8, .92, .86), fres);
   // sun glints on the slopes of the waves
   vec3 H = normalize(normalize(vec3(-.35, -.9, .5)) + vec3(0., .8, .6));
-  vec2 micro = amb(wp * 1.7, uTime * .75) * .045;
-  vec3 lightN = normalize(vec3(-g - micro, 1.));
-  vec3 sunH = normalize(vec3(-.12, -.06, 1.));
-  float slope = max(dot(lightN, sunH), 0.);
-  float lane = exp(-pow((vUv.x - (.28 + vUv.y * .22)) / .30, 2.));
-  float fleck = smoothstep(.55, .86, noise(wp * .19 + g * 1.5 + vec2(uTime * .32, -uTime * .55)));
-  float softSun = pow(slope, 48.) * .10;
-  float spec = pow(slope, 420.) * fleck * .65;
-  col += vec3(1., .96, .77) * (softSun + spec) * lane * (.25 + dap * .75);
+  float spec = pow(max(dot(N, H), 0.), 260.) * 2.6;
+  col += vec3(1., .97, .85) * spec * (.35 + dap * .65);
   // shade near the stone rim, deepest under the far wall
   col *= mix(.68, 1., smoothstep(1., .86, e));
   col *= 1. - .3 * smoothstep(.55, 1., e) * smoothstep(.1, -.7, q.y);
@@ -2281,8 +2279,8 @@ void main() {
       drawRipples(dt);
       drawBlossoms(dt);
       drawLotuses();
+      drawGlints();
     }
-    drawGlints();
     ctx.drawImage(rimC, 0, 0, W, H);
     drawDeer(dt);
     drawWaterfall(dt);
