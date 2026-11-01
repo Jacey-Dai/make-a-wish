@@ -15,3 +15,7 @@ User approved the scene, deer, shoreline and botanical concepts before implement
 - `deer-atlas-v1.png`: transparent side-facing deer with standing, two walking strides and grazing poses, matching the approved muted tawny deer study.
 
 Atlas source rectangles are specified in `index.html`; all assets load locally with no external service calls. Existing procedural botanicals remain a load-failure fallback. A deer is hidden until its atlas is ready. Shoreline slabs are rendered procedurally with varied weathered facets, patchy moss and sparse vegetation based on the approved shore concept. The live water shader, wave simulation and wish/coin/lantern logic were preserved.
+
+## v0.13 shore material
+
+`shore-stones-v1.png` generated with built-in image_gen using approved shore concept: three isolated weathered mossy slabs on transparent alpha, soft hand-painted olive gray stone, broad lit faces, patchy moss, stable contact surfaces, no smooth balls or hard low-poly triangles. Source rectangles in index.html; used for static shoreline and waterfall bank caches.
