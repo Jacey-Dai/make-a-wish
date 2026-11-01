@@ -19,3 +19,7 @@ Atlas source rectangles are specified in `index.html`; all assets load locally w
 ## v0.13 shore material
 
 `shore-stones-v1.png` generated with built-in image_gen using approved shore concept: three isolated weathered mossy slabs on transparent alpha, soft hand-painted olive gray stone, broad lit faces, patchy moss, stable contact surfaces, no smooth balls or hard low-poly triangles. Source rectangles in index.html; used for static shoreline and waterfall bank caches.
+
+## v0.14 cascade
+
+`rock-cascade-v1.png` generated using built-in image_gen and the user-referenced layout study. Prompt: isolated low mossy rock ledge, visible shallow winding stream feeding an irregular short cascade, soft painted olive/gray material, coherent origin and foamy landing, true transparency, no forest or broad pond patch. Animated highlights are clipped to the water region; the existing wave system receives subtle landing ripples.
