@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.11 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.12 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -221,25 +221,30 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   const mixc = (a, b, f, al = 1) => `rgba(${a.map((v, i) => Math.round(v + (b[i] - v) * f)).join(',')},${al})`;
   const FOG = [218, 232, 200];
   // a mossy boulder lit from the upper left; fog pushes it into the distance
+  /* ---------- F9 approved shoreline: weathered slabs with soft painted facets ---------- */
   function boulder(g, x, y, w, h, fog = 0, moss = 0.7) {
-    const v = srnd(-12, 12), base = [112 + v, 116 + v, 98 + v];
-    g.fillStyle = mixc([10, 20, 8], FOG, fog, 0.35 * (1 - fog));
-    g.beginPath(); g.ellipse(x + w * 0.12, y + h * 0.4, w * 0.6, h * 0.24, 0, 0, TAU); g.fill();
-    const gr = g.createRadialGradient(x - w * 0.18, y - h * 0.26, w * 0.04, x, y, w * 0.62);
-    gr.addColorStop(0, mixc(base.map(c => c * 1.55), FOG, fog)); gr.addColorStop(0.45, mixc(base, FOG, fog)); gr.addColorStop(1, mixc(base.map(c => c * 0.38), FOG, fog));
-    g.fillStyle = gr;
-    g.beginPath(); g.ellipse(x, y, w / 2, h / 2, srnd(-0.15, 0.15), 0, TAU); g.fill();
-    if (srnd(0, 1) < moss) {
-      const mc = srnd(0, 1) < 0.5 ? [108, 138, 62] : [84, 112, 48];
-      const mg = g.createRadialGradient(x - w * 0.08, y - h * 0.3, 0, x - w * 0.05, y - h * 0.2, w * 0.46);
-      mg.addColorStop(0, mixc(mc, FOG, fog, 0.82)); mg.addColorStop(0.65, mixc(mc, FOG, fog, 0.55)); mg.addColorStop(1, mixc(mc, FOG, fog, 0));
-      g.fillStyle = mg;
-      g.beginPath(); g.ellipse(x - w * 0.05, y - h * 0.22, w * 0.46, h * 0.34, 0, 0, TAU); g.fill();
-      for (let i = 0; i < w / 4; i++) {
-        g.fillStyle = srnd(0, 1) < 0.5 ? mixc([170, 205, 90], FOG, fog, 0.5) : mixc([40, 70, 25], FOG, fog, 0.4);
-        g.beginPath(); g.arc(x + srnd(-0.4, 0.35) * w, y - srnd(0.05, 0.42) * h, srnd(0.6, 1.8) * view.sc, 0, TAU); g.fill();
-      }
+    const v = srnd(-9, 9), base = [126 + v, 131 + v, 104 + v];
+    const pts = [[-.51,.10],[-.44,-.25],[-.25,-.49],[.15,-.46],[.43,-.28],[.53,.09],[.32,.43],[-.27,.46]];
+    const shape = pts.map(([px, py]) => [x + (px + srnd(-.045,.045)) * w, y + (py + srnd(-.04,.04)) * h]);
+    const path = ps => { g.beginPath(); ps.forEach(([px,py],i) => i ? g.lineTo(px,py) : g.moveTo(px,py)); g.closePath(); };
+    g.fillStyle = mixc([15,29,19], FOG, fog, .34);
+    g.beginPath(); g.ellipse(x + w * .09, y + h * .4, w * .58, h * .23, .1, 0, TAU); g.fill();
+    const gr = g.createLinearGradient(x - w * .3,y - h * .5,x + w * .2,y + h * .5);
+    gr.addColorStop(0,mixc(base.map(c=>c*1.35),FOG,fog)); gr.addColorStop(.55,mixc(base,FOG,fog)); gr.addColorStop(1,mixc(base.map(c=>c*.49),FOG,fog));
+    path(shape); g.fillStyle=gr; g.fill();
+    g.save(); g.clip();
+    const ridge=[x-w*.04,y-h*.06];
+    path([shape[0],shape[1],shape[2],shape[3],ridge]); g.fillStyle=mixc([193+v,190+v,149+v],FOG,fog,.38); g.fill();
+    path([ridge,shape[3],shape[4],shape[5],shape[6]]); g.fillStyle=mixc([57,69,48],FOG,fog,.24); g.fill();
+    // Patchy moss follows the lit upper cracks instead of a round green cap.
+    if(srnd(0,1)<moss) for(let i=0;i<18;i++) {
+      const px=x+srnd(-.43,.37)*w, py=y+srnd(-.45,.12)*h, r=srnd(.045,.13)*w;
+      g.fillStyle=mixc(i%3 ? [111,137,62] : [151,164,82],FOG,fog,srnd(.35,.7));
+      g.beginPath(); g.moveTo(px-r,py); g.lineTo(px-r*.2,py-r*.35); g.lineTo(px+r*.8,py-r*.1); g.lineTo(px+r,py+r*.32); g.lineTo(px-r*.4,py+r*.4); g.closePath(); g.fill();
     }
+    g.strokeStyle=mixc([51,62,43],FOG,fog,.4); g.lineWidth=.7*view.sc;
+    g.beginPath(); g.moveTo(x+w*.2,y-h*.3); g.lineTo(x+w*.08,y-h*.05); g.lineTo(x+w*.15,y+h*.15); g.stroke();
+    g.restore();
   }
   function fern(g, bx, by, len, ang, col, fog = 0) {
     const sc = view.sc;
@@ -280,6 +285,18 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   /* ---------- F9 painterly forest environment plate ---------- */
   const forestPlate = new Image();
   let forestPlateReady = false;
+  const botanicalAtlas = new Image(), deerAtlas = new Image();
+  let botanicalReady = false, deerReady = false;
+  botanicalAtlas.onload = () => { botanicalReady = true; };
+  deerAtlas.onload = () => { deerReady = true; };
+  // Rectangles include transparent breathing room; no per-frame image processing.
+  const botanicalRects = [[0,0,610,500],[610,0,525,500],[1135,0,401,500],[0,500,610,524],[610,500,525,524],[1135,500,401,524]];
+  const deerRects = [[120,0,600,520],[850,20,620,500],[110,530,620,480],[850,580,600,430]];
+  function botanicalSprite(g, index, x, y, w, h) {
+    const [sx,sy,sw,sh] = botanicalRects[index];
+    g.drawImage(botanicalAtlas,sx,sy,sw,sh,x-w/2,y-h/2,w,h);
+  }
+
   // Loading once before rebuilding preserves both rendering paths and resize behavior.
   forestPlate.onload = () => { forestPlateReady = true; layout(); };
   function paintForestPlate(g) {
@@ -651,49 +668,30 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   window.addEventListener('deviceorientation', e => { if (e.gamma != null) cam.tilt = Math.max(-1, Math.min(1, e.gamma / 25)); });
 
   function paintRim() {
-    const [c, g] = offscreen();
-    const R = rings(), sc = view.sc, e = R.water;
-    const n = Math.round(Math.PI * (e[2] + e[3]) / (20 * sc));
-    const stones = [];
-    for (let i = 0; i < n; i++) {
-      const a = i / n * TAU + srnd(-0.03, 0.03);
-      const x = e[0] + Math.cos(a) * (e[2] + srnd(0, 7) * sc), y = e[1] + Math.sin(a) * (e[3] + srnd(0, 5) * sc) - view.wallH * (Math.sin(a) < 0 ? 1 : 0.2);
-      if (Math.sin(a) < 0 && Math.abs(x - fall.x) < fall.w * 0.7) continue;
-      const w = srnd(13, 26) * sc;
-      stones.push({ x, y, w, h: w * srnd(0.5, 0.72), rot: srnd(-0.3, 0.3) });
+    const [c,g]=offscreen(), sc=view.sc, e=rings().water;
+    const n=Math.round(Math.PI*(e[2]+e[3])/(32*sc)), stones=[];
+    for(let i=0;i<n;i++) {
+      const a=i/n*TAU+srnd(-.012,.012), sa=Math.sin(a);
+      const x=e[0]+Math.cos(a)*(e[2]+5*sc), y=e[1]+sa*(e[3]+4*sc)-view.wallH*(sa<0?1:.2);
+      if(sa<0&&Math.abs(x-fall.x)<fall.w*.7) continue;
+      const w=srnd(26,44)*sc*(i%6===0?1.35:1);
+      stones.push({x,y,w,h:w*srnd(.43,.64),a});
     }
-    stones.sort((p, q) => p.y - q.y);
-    for (const st of stones) {
-      g.save(); g.translate(st.x, st.y); g.rotate(st.rot);
-      g.fillStyle = 'rgba(5,20,8,0.35)';
-      g.beginPath(); g.ellipse(3 * sc, 4 * sc, st.w * 0.55, st.h * 0.55, 0, 0, TAU); g.fill();
-      const v = srnd(-14, 14);
-      const gr = g.createRadialGradient(-st.w * 0.2, -st.h * 0.3, st.w * 0.04, 0, 0, st.w * 0.62);
-      gr.addColorStop(0, `rgb(${200 + v},${198 + v},${176 + v})`); gr.addColorStop(0.45, `rgb(${134 + v},${136 + v},${116 + v})`); gr.addColorStop(1, `rgb(${50 + v},${55 + v},${44 + v})`);
-      g.fillStyle = gr;
-      g.beginPath(); g.ellipse(0, 0, st.w * 0.55, st.h * 0.55, 0, 0, TAU); g.fill();
-      const wg = g.createLinearGradient(0, 0, 0, st.h * 0.55);
-      wg.addColorStop(0, 'rgba(20,32,22,0)'); wg.addColorStop(1, 'rgba(20,32,22,0.45)');
-      g.fillStyle = wg; g.fill();
-      const mg = g.createRadialGradient(-st.w * 0.08, -st.h * 0.28, 0, -st.w * 0.08, -st.h * 0.2, st.w * 0.45);
-      const mc = srnd(0, 1) < 0.5 ? '128,168,62' : '100,140,50';
-      mg.addColorStop(0, `rgba(${mc},0.85)`); mg.addColorStop(0.65, `rgba(${mc},0.5)`); mg.addColorStop(1, `rgba(${mc},0)`);
-      g.fillStyle = mg;
-      g.beginPath(); g.ellipse(-st.w * 0.08, -st.h * 0.22, st.w * 0.45, st.h * 0.34, 0, 0, TAU); g.fill();
-      g.restore();
-      if (srnd(0, 1) < 0.45) {
-        g.strokeStyle = 'rgba(160,210,80,0.85)'; g.lineWidth = 1;
-        for (let k = 0; k < 5; k++) { const gx = st.x + srnd(-st.w / 2, st.w / 2); g.beginPath(); g.moveTo(gx, st.y - st.h * 0.2); g.lineTo(gx + srnd(-3, 3) * sc, st.y - st.h * 0.2 - srnd(5, 11) * sc); g.stroke(); }
-      }
-      if (srnd(0, 1) < 0.25) {
-        g.fillStyle = 'rgba(255,255,248,0.95)';
-        g.beginPath(); g.arc(st.x + srnd(-6, 6) * sc, st.y - st.h * 0.35, 1.6 * sc, 0, TAU); g.fill();
+    stones.sort((a,b)=>a.y-b.y);
+    for(const st of stones) {
+      boulder(g,st.x,st.y,st.w,st.h,0,.85);
+      // Dark wet foot anchors the stone against the unchanged water boundary.
+      g.strokeStyle='rgba(24,50,34,.4)';g.lineWidth=2*sc;
+      g.beginPath();g.moveTo(st.x-st.w*.28,st.y+st.h*.38);g.lineTo(st.x+st.w*.27,st.y+st.h*.4);g.stroke();
+      if(srnd(0,1)<.20) fern(g,st.x,st.y-st.h*.22,srnd(15,29)*sc,srnd(-2.1,-.9),[100,139,64]);
+      if(srnd(0,1)<.18) {
+        const x=st.x-st.w*.2,y=st.y-st.h*.45;
+        g.fillStyle='#eee9ce';for(let k=0;k<5;k++){const a=k/5*TAU;g.beginPath();g.ellipse(x+Math.cos(a)*2*sc,y+Math.sin(a)*2*sc,1.5*sc,.9*sc,a,0,TAU);g.fill();}
+        g.fillStyle='#cbbd69';g.beginPath();g.arc(x,y,.8*sc,0,TAU);g.fill();
       }
     }
-    grain(g, 0.05, 'source-atop');
-    return c;
+    grain(g,.035,'source-atop');return c;
   }
-
   function paintForeground() {
     const [c, g] = offscreen();
     const sc = view.sc;
@@ -1521,7 +1519,20 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   const LILY = [[70, 116, 38], [96, 142, 48], [124, 166, 60]];
   let lotusQ = [];
   // pads lie in the water layer (world units); lotus flowers stand up out of it and are drawn later in screen space
+  /* ---------- F9 approved lily artwork, retaining the original wave bob ---------- */
+  function drawPaintedLilies() {
+    for(const l of lilies) {
+      const rot=l.rot+Math.sin(tNow*.4+l.ph)*.06, bob=waveAt(l.x,l.y)*1.6*S/view.T;
+      const x=l.x+Math.sin(tNow*.3+l.ph)*2*S,y=l.y+Math.cos(tNow*.25+l.ph)*2*S+bob;
+      ctx.fillStyle='rgba(0,22,14,.22)';ctx.beginPath();ctx.ellipse(x+2*S,y+3*S,l.r*.91,l.r*.84,0,0,TAU);ctx.fill();
+      ctx.save();ctx.translate(x,y);ctx.rotate(rot);
+      botanicalSprite(ctx,Math.min(2,Math.floor(l.tone*3)),0,0,l.r*2.65,l.r*2.65);
+      ctx.restore();
+      if(l.flower) lotusQ.push([x-Math.cos(rot)*l.r*.25,y-Math.sin(rot)*l.r*.25,l.r,rot]);
+    }
+  }
   function drawLilies() {
+    if(botanicalReady) { drawPaintedLilies(); return; }
     const T = view.T, th = 2.4 * S / T;
     for (const l of lilies) {
       const rot = l.rot + Math.sin(tNow * 0.4 + l.ph) * 0.06;
@@ -1590,6 +1601,14 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(mx + px * 0.1, my + py * 0.1, tx, ty); ctx.stroke();
   }
   function drawLotus(x, y, r, rot) {
+    if(botanicalReady) {
+      const index=3+Math.min(2,Math.floor(((rot%TAU+TAU)%TAU)/TAU*3));
+      const w=r*(index===3?2.8:index===4?2.4:1.65),h=r*(index===3?2.25:2.7);
+      ctx.fillStyle='rgba(0,28,19,.2)';ctx.beginPath();ctx.ellipse(x,y+2*S,r*.62,r*.22,0,0,TAU);ctx.fill();
+      ctx.save();ctx.translate(x,y+4*S);ctx.scale(1,-.4);ctx.globalAlpha=.14;
+      botanicalSprite(ctx,index,0,h*.4,w,h);ctx.restore();
+      botanicalSprite(ctx,index,x,y-h*.30,w,h); return;
+    }
     const T = view.T;
     const rings = [[8, r * 0.95, r * 0.25, r * 0.3], [7, r * 0.72, r * 0.5, r * 0.24], [5, r * 0.45, r * 0.68, r * 0.2]];
     const petals = [];
@@ -2118,34 +2137,16 @@ void main() {
       d.head += (want - d.head) * dt * 2.5;
       if (d.timer <= 0) { d.mode = 'walk'; d.dir = -d.dir; }
     }
-    const h = 42 * sc, gy = view.deerY, x = d.x + (gl ? cam.x * 22 * sc * 0.72 : 0), col = [150, 118, 82];
-    const c1 = mixc(col, FOG, 0.42), c2 = mixc(col.map(v => v * 0.7), FOG, 0.42), c3 = mixc([235, 225, 205], FOG, 0.35);
-    ctx.save();
-    ctx.translate(x, gy); ctx.scale(d.dir, 1);
-    const L = h * 0.48, bw = h * 0.36, bh = h * 0.17, by = -L - bh * 0.5;
-    const swing = d.mode === 'walk' ? Math.sin(d.ph) * 0.35 : 0;
-    ctx.strokeStyle = c2; ctx.lineCap = 'round'; ctx.lineWidth = 2 * sc;
-    for (const [lx, s] of [[bw * 0.7, 1], [bw * 0.55, -1], [-bw * 0.7, -1], [-bw * 0.55, 1]]) {
-      const a = swing * s;
-      ctx.beginPath(); ctx.moveTo(lx, by + bh * 0.3); ctx.lineTo(lx + Math.sin(a) * L * 0.5, by + bh * 0.3 + L * 0.5); ctx.lineTo(lx + Math.sin(a) * L, 0); ctx.stroke();
-    }
-    ctx.fillStyle = mixc([20, 30, 15], FOG, 0.5, 0.25);
-    ctx.beginPath(); ctx.ellipse(0, 1, bw * 1.1, 2.5 * sc, 0, 0, TAU); ctx.fill();
-    const bg = ctx.createLinearGradient(0, by - bh, 0, by + bh);
-    bg.addColorStop(0, c1); bg.addColorStop(1, c2);
-    ctx.fillStyle = bg;
-    ctx.beginPath(); ctx.ellipse(0, by, bw, bh, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = c3;
-    ctx.beginPath(); ctx.ellipse(-bw * 0.95, by - bh * 0.3, 2.2 * sc, 3.2 * sc, 0.4, 0, TAU); ctx.fill();
-    // neck and head, lowered to graze
-    const na = -1.15 + d.head * 1.9, nx = bw * 0.75, ny = by - bh * 0.4, nl = h * 0.36;
-    const hx = nx + Math.cos(na) * nl, hy = ny + Math.sin(na) * nl;
-    ctx.strokeStyle = c1; ctx.lineWidth = 5 * sc;
-    ctx.beginPath(); ctx.moveTo(nx - 2 * sc, ny + 3 * sc); ctx.lineTo(hx, hy); ctx.stroke();
-    ctx.fillStyle = c1;
-    ctx.beginPath(); ctx.ellipse(hx + 3 * sc, hy + 1 * sc, 5.5 * sc, 3 * sc, 0.35 + d.head * 0.9, 0, TAU); ctx.fill();
-    ctx.fillStyle = c2;
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(hx - 1 * sc + s * 1.5 * sc, hy - 4 * sc, 1.5 * sc, 3.5 * sc, -0.5 + s * 0.3, 0, TAU); ctx.fill(); }
+    if(!deerReady) return;
+    // Ground the deer on the clearing just behind the pool; never inside the water.
+    const gy=pond.cy-pond.ry*view.T-22*sc, x=d.x;
+    const frame=d.mode==='graze' ? (d.head>.45?3:0) : (Math.sin(d.ph)>0?1:2);
+    const [sx,sy,sw,sh]=deerRects[frame], width=84*sc, height=width*sh/sw;
+    const fade=Math.min(1,Math.max(0,d.x/(55*sc)),Math.max(0,(W-d.x)/(55*sc)));
+    ctx.save();ctx.globalAlpha=.86*fade;ctx.translate(x,gy);ctx.scale(d.dir,1);
+    ctx.fillStyle='rgba(20,36,23,.25)';ctx.beginPath();ctx.ellipse(0,1,27*sc,4*sc,0,0,TAU);ctx.fill();
+    const bob=d.mode==='walk'?Math.abs(Math.sin(d.ph))*1.1*sc:Math.sin(tNow*1.3)*.4*sc;
+    ctx.drawImage(deerAtlas,sx,sy,sw,sh,-width/2,-height-bob,width,height);
     ctx.restore();
   }
 
@@ -2292,7 +2293,9 @@ void main() {
   window.addEventListener('resize', layout);
   initGL();
   layout();
-  forestPlate.src = new URL('assets/forest-sanctuary-v1.png', document.baseURI).href;
+  forestPlate.src = new URL('assets/forest-sanctuary-v2.png', document.baseURI).href;
+  botanicalAtlas.src = new URL('assets/botanical-atlas-v1.png', document.baseURI).href;
+  deerAtlas.src = new URL('assets/deer-atlas-v1.png', document.baseURI).href;
   requestAnimationFrame(frame);
 })();
 </script>
