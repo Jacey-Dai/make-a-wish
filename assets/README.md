@@ -27,3 +27,7 @@ Atlas source rectangles are specified in `index.html`; all assets load locally w
 ## v0.15 pond bed
 
 `pond-bed-v1.png`, built-in image_gen. Prompt: top-down painterly pond-bed material, warm sage sand/silt, small irregular warm-gray and olive stones clustered toward edges, quiet center for readable fish, sparse aquatic tufts and muted fallen leaves. No water, reflections, caustics, fish or UI. Refracted and shaded by the live shader; also used in 2D fallback.
+
+## v0.16 waterfall backing
+
+`cascade-rock-backing-v1.png`, built-in image_gen edit of the existing rock cascade: preserve framing and rock placement, remove all painted water/foam, expose recessed dark wet rock behind the fall and stream bed above; transparent outer background. Actual stream, falling water, highlights and foam are rendered separately each frame.

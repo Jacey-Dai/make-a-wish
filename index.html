@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.15.1 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.16 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -685,44 +685,57 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   }
   window.addEventListener('deviceorientation', e => { if (e.gamma != null) cam.tilt = Math.max(-1, Math.min(1, e.gamma / 25)); });
 
+  /* ---------- F9 supported bank groups, contact occlusion and cast shadows ---------- */
   function paintRim() {
-    const [c,g]=offscreen(), sc=view.sc, e=rings().water;
-    const stones=[];
-    // F9 irregular clusters: variable spacing, offset banks and uneven low courses.
-    let a=srnd(0,.07);
-    while(a<TAU) {
-      const sa=Math.sin(a),ca=Math.cos(a),cluster=.5+.5*Math.sin(a*4.3+.8);
-      const outward=(5+cluster*7+srnd(-2,2))*sc;
-      const x=e[0]+ca*(e[2]+outward),y=e[1]+sa*(e[3]+outward*.7)-view.wallH*(sa<0?1:.2);
-      const w=srnd(28,48)*sc, h=w*srnd(.4,.55);
-      const inlet=(sa<0&&Math.abs(x-fall.x)<fall.w*1.1)||(Math.abs(a-3.9)<.11);
-      if(!inlet) {
-        // Some stretches are a low embedded slab, others a substantial piled bank.
-        stones.push({x,y,w:w*(cluster<.3?1.22:1),h:cluster<.3?h*.6:h,a,rot:srnd(-.06,.06)});
-        if(cluster>.55&&Math.abs(ca)<.82&&srnd(0,1)<.55) {
-          stones.push({x:x+ca*10*sc+srnd(-3,3)*sc,y:y-h*.32+sa*8*sc,w:w*srnd(.48,.88),h:h*srnd(.55,.9),a,rot:srnd(-.08,.08)});
-        }
-        if(srnd(0,1)<.38)stones.push({x:x+srnd(-.65,.65)*w,y:y+srnd(-.1,.25)*h,w:w*srnd(.2,.38),h:h*.35,a,rot:srnd(-.08,.08)});
-      }
-      const tangent=Math.hypot(e[2]*sa,e[3]*ca);
-      a+=Math.max(.035,w*srnd(.55,.95)/Math.max(1,tangent));
+    const [c,g]=offscreen(),sc=view.sc,e=rings().water;
+    const point=(a,d=0)=>[e[0]+Math.cos(a)*(e[2]+d),e[1]+Math.sin(a)*(e[3]+d*.72)];
+    // A low earth/moss footing supports the rocks and joins the forest floor.
+    g.beginPath();
+    for(let i=0;i<=100;i++){const a=i/100*TAU,d=(11+4*Math.sin(a*5+.8)+2*Math.sin(a*11))*sc,[x,y]=point(a,d);i?g.lineTo(x,y):g.moveTo(x,y);}
+    for(let i=100;i>=0;i--){const a=i/100*TAU,[x,y]=point(a,-2*sc);g.lineTo(x,y);}g.closePath();
+    g.fillStyle='#656848';g.fill();
+    const groups=[];
+    // Distinct groups are separated by embedded slabs and moss, rather than one equal course.
+    for(const [a,size] of [[.18,.8],[.82,1],[1.5,.75],[2.23,1.1],[2.92,.8],[3.48,.9],[4.15,.8],[4.65,.6],[5.17,1],[5.78,.85]]) {
+      if(Math.abs(a-4.65)<.1)continue; // waterfall inlet
+      const [x,y]=point(a,8*sc);groups.push({a,x,y,size});
     }
-    // Keep the inner shoreline continuous: no decorative slab can jut into the pool.
-    g.save();g.beginPath();g.rect(0,0,W,H);g.moveTo(e[0]+e[2]-3*sc,e[1]);g.ellipse(e[0],e[1],e[2]-3*sc,e[3]-2*sc,0,0,TAU);g.clip('evenodd');
-    stones.sort((a,b)=>a.y-b.y);
-    for(const st of stones) {
-      g.save();g.translate(st.x,st.y);g.rotate(st.rot||0);boulder(g,0,0,st.w,st.h,0,.85);g.restore();
-      // Dark wet foot anchors the stone against the unchanged water boundary.
-      g.strokeStyle='rgba(24,50,34,.4)';g.lineWidth=2*sc;
-      g.beginPath();g.moveTo(st.x-st.w*.28,st.y+st.h*.38);g.lineTo(st.x+st.w*.27,st.y+st.h*.4);g.stroke();
-      if(srnd(0,1)<.20) fern(g,st.x,st.y-st.h*.22,srnd(15,29)*sc,srnd(-2.1,-.9),[100,139,64]);
-      if(srnd(0,1)<.18) {
-        const x=st.x-st.w*.2,y=st.y-st.h*.45;
-        g.fillStyle='#eee9ce';for(let k=0;k<5;k++){const a=k/5*TAU;g.beginPath();g.ellipse(x+Math.cos(a)*2*sc,y+Math.sin(a)*2*sc,1.5*sc,.9*sc,a,0,TAU);g.fill();}
-        g.fillStyle='#cbbd69';g.beginPath();g.arc(x,y,.8*sc,0,TAU);g.fill();
+    groups.sort((a,b)=>a.y-b.y);
+    const shadow=(x,y,w,h,alpha)=>{
+      g.save();g.translate(x,y);g.scale(1,h/w);
+      const sh=g.createRadialGradient(0,0,w*.12,0,0,w*.7);
+      sh.addColorStop(0,`rgba(15,27,19,${alpha})`);sh.addColorStop(1,'rgba(15,27,19,0)');
+      g.fillStyle=sh;g.beginPath();g.arc(0,0,w*.7,0,TAU);g.fill();g.restore();
+    };
+    for(const gr of groups) {
+      const {a,x,y}=gr,tx=-Math.sin(a),ty=Math.cos(a)*.6;
+      const scale=gr.size*(.86+.14*Math.sin(a));
+      const w=srnd(38,53)*sc*scale,h=w*srnd(.64,.78);
+      const bases=[];
+      for(let i=0;i<3;i++) {
+        const d=(i-1)*w*.65,bx=x+tx*d+Math.cos(a)*srnd(1,6)*sc,by=y+ty*d;
+        const bw=w*srnd(.78,1.1),bh=h*srnd(.75,1);
+        bases.push({x:bx,y:by,w:bw,h:bh});
+        shadow(bx+4*sc,by+4*sc,bw,bh*.48,.42);
       }
+      bases.sort((a,b)=>a.y-b.y);
+      for(const st of bases)boulder(g,st.x,st.y-st.h*.28,st.w,st.h,0,.9);
+      // An upper stone actually rests on the middle base; its contact seam is shaded.
+      if(Math.abs(Math.cos(a))<.87&&gr.size>.8) {
+        const uw=w*.72,uh=h*.78,uy=y-h*.73;
+        shadow(x+2*sc,uy+uh*.35,uw,uh*.23,.58);
+        boulder(g,x,uy,uw,uh,0,.9);
+      }
+      if(gr.size>.85)fern(g,x+tx*w*.8,y-h*.25,23*sc,srnd(-2.1,-1),[86,115,53]);
     }
-    g.restore();grain(g,.035,'source-atop');return c;
+    // Low partially buried infill: it connects groups without creating another tall row.
+    for(let i=0;i<42;i++) {
+      const a=i/42*TAU+srnd(-.018,.018);
+      if(Math.abs(a-3.9)<.14||(Math.sin(a)<0&&Math.abs(Math.cos(a)*e[2])<fall.w*1.25))continue;
+      const [x,y]=point(a,5*sc),w=srnd(15,26)*sc;
+      shadow(x+2*sc,y+2*sc,w,w*.25,.24);boulder(g,x,y-w*.08,w,w*.4,0,.8);
+    }
+    grain(g,.035,'source-atop');return c;
   }
   function paintForeground() {
     const [c, g] = offscreen();
@@ -1418,50 +1431,61 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   }
   /* ---------- F9 reference-matched rock cascade, with moving water highlights ---------- */
   function drawRockCascade(dt) {
-    const sc=view.sc,w=Math.min(pond.rx*.82,270*sc),h=w*691/1484;
-    const left=fall.x-w*.67,top=fall.y2-h*.95;
+    const sc=view.sc,w=Math.min(pond.rx*.8,280*sc),h=w*691/1484;
+    const left=fall.x-w*.65,top=fall.y2-h*.95;
+    const cx=left+w*.64,lip=top+h*.463,base=top+h*.925,hw=w*.104;
+    // Rock backing contains no painted water: every visible flowing strand is live.
+    const shadow=ctx.createRadialGradient(cx+4*sc,base+5*sc,0,cx+4*sc,base+5*sc,w*.4);
+    shadow.addColorStop(0,'rgba(9,28,22,.36)');shadow.addColorStop(1,'rgba(9,28,22,0)');
+    ctx.save();ctx.translate(cx+4*sc,base+5*sc);ctx.scale(1,.24);ctx.fillStyle=shadow;
+    // Local shadow uses local coordinates so it remains attached when the pond resizes.
+    const sh=ctx.createRadialGradient(0,0,0,0,0,w*.42);sh.addColorStop(0,'rgba(10,26,20,.35)');sh.addColorStop(1,'rgba(10,26,20,0)');
+    ctx.fillStyle=sh;ctx.beginPath();ctx.arc(0,0,w*.42,0,TAU);ctx.fill();ctx.restore();
     ctx.drawImage(cascadeAtlas,36,180,1484,691,left,top,w,h);
-    const cx=fall.x,lip=top+h*.46,base=fall.y2-h*.07,hw=w*.105;
-    if(!fallTex)makeFallTex();
-    // F9 animated falling-water layer follows the painted rock lip and landing.
-    ctx.save();
-    ctx.beginPath();ctx.moveTo(cx-hw*.9,lip);ctx.quadraticCurveTo(cx,lip-3*sc,cx+hw*.65,lip+3*sc);
-    ctx.bezierCurveTo(cx+hw,lip+h*.12,cx+hw*1.02,base-h*.1,cx+hw*1.25,base);
-    ctx.lineTo(cx-hw*.9,base);ctx.bezierCurveTo(cx-hw*.8,base-h*.15,cx-hw*.85,lip+h*.15,cx-hw*.9,lip);ctx.closePath();ctx.clip();
-    ctx.fillStyle='rgba(61,115,97,.18)';ctx.fillRect(cx-w*.2,lip,w*.4,base-lip);
-    // Two texture layers scroll continuously downward, not just pulsing in place.
-    const th=Math.max(24*sc,(base-lip)*1.35);
-    for(const [speed,alpha,offset] of [[1,.62,0],[1.37,.35,.4]]) {
-      const shift=(tNow*65*sc*speed+offset*th)%th;ctx.globalAlpha=alpha;
-      for(let yy=lip-th+shift;yy<base;yy+=th)ctx.drawImage(fallTex,cx-hw*1.35,yy,hw*2.7,th);
+    // Shallow moving stream feeds the lip, with dark wet rock visible beneath it.
+    const streamPoint=t=>[left+w*(.33+.31*t),top+h*(.14+.323*t)];
+    ctx.lineCap='round';
+    for(let i=0;i<4;i++) {
+      const p=streamPoint(i/4),q=streamPoint((i+1)/4);
+      ctx.strokeStyle='rgba(89,151,132,.28)';ctx.lineWidth=(8+i*2)*sc;
+      ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();
     }
-    ctx.globalAlpha=1;ctx.lineCap='round';
-    for(let i=0;i<19;i++) {
-      const t=(tNow*(.8+(i%4)*.12)+i*.173)%1;
-      const xx=cx+Math.sin(i*2.39)*hw*.83, yy=lip+(base-lip)*t*t;
-      const len=(3+7*t)*sc;
-      ctx.strokeStyle=`rgba(247,255,244,${.35+.4*Math.sin(t*Math.PI)})`;ctx.lineWidth=(.65+(i%3)*.45)*sc;
-      ctx.beginPath();ctx.moveTo(xx,yy);ctx.quadraticCurveTo(xx+Math.sin(t*5+i)*1.5*sc,yy+len*.5,xx+1*sc,yy+len);ctx.stroke();
+    for(let i=0;i<12;i++) {
+      const t=(tNow*.5+i/12)%1,p=streamPoint(t),q=streamPoint(Math.min(1,t+.055));
+      ctx.strokeStyle=`rgba(231,247,228,${.25+.28*Math.sin(t*Math.PI)})`;ctx.lineWidth=.7*sc;
+      ctx.beginPath();ctx.moveTo(p[0],p[1]+(i%3-1)*2*sc);ctx.quadraticCurveTo((p[0]+q[0])/2,p[1]+2*sc,q[0],q[1]);ctx.stroke();
+    }
+    // Recess behind the falling sheet creates separation from the rock face.
+    ctx.save();ctx.beginPath();ctx.moveTo(cx-hw*.95,lip);ctx.quadraticCurveTo(cx,lip-3*sc,cx+hw*.85,lip);
+    ctx.lineTo(cx+hw*1.12,base);ctx.lineTo(cx-hw*.75,base);ctx.closePath();ctx.clip();
+    const depth=ctx.createLinearGradient(0,lip,0,base);
+    depth.addColorStop(0,'rgba(9,24,21,.48)');depth.addColorStop(.2,'rgba(27,78,69,.2)');depth.addColorStop(1,'rgba(179,214,199,.16)');
+    ctx.fillStyle=depth;ctx.fillRect(cx-hw*1.5,lip,hw*3,base-lip);
+    for(let i=0;i<26;i++) {
+      const u=i/25,phase=i*2.37,spread=(u-.5)*hw*1.75;
+      const bend=Math.sin(phase)*2.6*sc;
+      const grad=ctx.createLinearGradient(0,lip,0,base);
+      grad.addColorStop(0,'rgba(178,222,202,.4)');grad.addColorStop(.18,'rgba(238,250,235,.55)');grad.addColorStop(.66,'rgba(197,232,222,.28)');grad.addColorStop(1,'rgba(238,250,240,.7)');
+      ctx.strokeStyle=grad;ctx.lineWidth=(.8+(i%4)*.5)*sc;
+      ctx.beginPath();ctx.moveTo(cx+spread,lip);
+      ctx.bezierCurveTo(cx+spread+bend,lip+(base-lip)*.2,cx+spread*1.12+bend,base-12*sc,cx+spread*1.12+2*sc,base);ctx.stroke();
+      // Accelerating packets of white water travel down the curved strands.
+      const t=(tNow*(.7+(i%3)*.12)+phase)%1,tt=t*t;
+      const yy=lip+(base-lip)*tt,xx=cx+spread*(1+.12*tt)+Math.sin(t*4+phase)*1.5*sc;
+      ctx.strokeStyle=`rgba(247,255,242,${.32+.42*Math.sin(t*Math.PI)})`;ctx.lineWidth=(.7+(i%3)*.4)*sc;
+      ctx.beginPath();ctx.moveTo(xx,yy);ctx.quadraticCurveTo(xx+1*sc,yy+3*sc,xx+2*sc,yy+(3+5*t)*sc);ctx.stroke();
     }
     ctx.restore();
-    // Visible curved streaks travel along the shallow stream above the fall.
-    for(let i=0;i<9;i++) {
-      const t=(tNow*.43+i/9)%1,t2=Math.min(1,t+.09);
-      const pt=u=>[left+w*(.34+.30*u),top+h*(.15+.29*u+.025*Math.sin(u*5))];
-      const p=pt(t),q=pt(t2);
-      ctx.strokeStyle=`rgba(226,247,230,${.22+.32*Math.sin(t*Math.PI)})`;ctx.lineWidth=(.7+(i%2)*.5)*sc;
-      ctx.beginPath();ctx.moveTo(p[0],p[1]+(i%3-1)*2*sc);ctx.lineTo(q[0],q[1]+(i%3-1)*2*sc);ctx.stroke();
-    }
-    // Water breaks into tiny ballistic droplets and moving foam at the impact.
-    for(let i=0;i<16;i++) {
-      const t=(tNow*(.95+(i%3)*.15)+i*.137)%1;
-      const dx=Math.sin(i*2.4)*hw*(.45+t*.85),dy=-Math.sin(t*Math.PI)*(3+(i%4))*sc;
-      ctx.fillStyle=`rgba(242,253,242,${(1-t)*.65})`;
-      ctx.beginPath();ctx.ellipse(cx+dx,base+dy, (.7+(i%2)*.5)*sc,(.6+t*.8)*sc,0,0,TAU);ctx.fill();
+    // Light catches only the rounded wet lip, leaving the recess underneath dark.
+    ctx.strokeStyle='rgba(228,244,213,.52)';ctx.lineWidth=1.1*sc;
+    ctx.beginPath();ctx.moveTo(cx-hw*.95,lip);ctx.quadraticCurveTo(cx,lip-2*sc,cx+hw*.85,lip);ctx.stroke();
+    for(let i=0;i<21;i++) {
+      const t=(tNow*(.8+(i%4)*.12)+i*.137)%1,dx=Math.sin(i*2.4)*hw*(.35+t*.85),dy=-Math.sin(t*Math.PI)*(2+(i%4))*sc;
+      ctx.fillStyle=`rgba(236,249,236,${(1-t)*.65})`;ctx.beginPath();ctx.ellipse(cx+dx,base+dy,(.7+(i%3)*.35)*sc,(.6+t*.6)*sc,0,0,TAU);ctx.fill();
     }
     for(let i=0;i<3;i++) {
-      const t=(tNow*.7+i/3)%1;
-      ctx.strokeStyle=`rgba(235,250,235,${.42*(1-t)})`;ctx.lineWidth=(1-t*.5)*sc;
+      const t=(tNow*.65+i/3)%1;
+      ctx.strokeStyle=`rgba(223,244,231,${.35*(1-t)})`;ctx.lineWidth=.8*sc;
       ctx.beginPath();ctx.ellipse(cx,base+2*sc+t*3*sc,hw*(.5+t), (2+t*4)*sc,0,0,Math.PI);ctx.stroke();
     }
     fall.t-=dt;
@@ -2225,9 +2249,9 @@ void main() {
   function drawDeer(dt) {
     if(!deerReady)return;
     const sc=view.sc,a=3.9,edgeX=pond.cx+Math.cos(a)*pond.rx,edgeY=pond.cy+Math.sin(a)*pond.ry*view.T;
-    const width=52*sc,[sx,sy,sw,sh]=deerRects[3],height=width*sh/sw;
+    const width=70*sc,[sx,sy,sw,sh]=deerRects[3],height=width*sh/sw;
     // Hooves stay on the bank, the lowered muzzle reaches the small open inlet.
-    const x=edgeX-width*.38,y=edgeY+3*sc;
+    const x=edgeX-width*.40+5*sc,y=edgeY+5*sc;
     ctx.save();ctx.globalAlpha=.92;
     ctx.fillStyle='rgba(25,40,25,.25)';ctx.beginPath();ctx.ellipse(x-3*sc,y-1*sc,width*.35,2.5*sc,0,0,TAU);ctx.fill();
     ctx.drawImage(deerAtlas,sx,sy,sw,sh,x-width*.5,y-height+Math.sin(tNow*1.7)*.22*sc,width,height);
@@ -2384,7 +2408,7 @@ void main() {
   botanicalAtlas.src = new URL('assets/botanical-atlas-v1.png', document.baseURI).href;
   deerAtlas.src = new URL('assets/deer-atlas-v1.png', document.baseURI).href;
   stoneAtlas.src = new URL('assets/shore-stones-v1.png', document.baseURI).href;
-  cascadeAtlas.src = new URL('assets/rock-cascade-v1.png', document.baseURI).href;
+  cascadeAtlas.src = new URL('assets/cascade-rock-backing-v1.png', document.baseURI).href;
   bedArt.src = new URL('assets/pond-bed-v1.png', document.baseURI).href;
   requestAnimationFrame(frame);
 })();
