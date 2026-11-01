@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.14.1 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.15 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -297,6 +297,8 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   let forestPlateReady = false;
   const botanicalAtlas = new Image(), deerAtlas = new Image(), stoneAtlas = new Image();
   let stonesReady=false;
+  const bedArt=new Image();let bedReady=false;
+  bedArt.onload=()=>{bedReady=true;layout();};
   const cascadeAtlas=new Image();let cascadeReady=false;
   cascadeAtlas.onload=()=>{cascadeReady=true;layout();};
   const stoneRects=[[6,368,570,309],[580,318,440,376],[1027,387,507,292]];
@@ -690,21 +692,23 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     let a=srnd(0,.07);
     while(a<TAU) {
       const sa=Math.sin(a),ca=Math.cos(a),cluster=.5+.5*Math.sin(a*4.3+.8);
-      const outward=srnd(-3,10)*sc+cluster*9*sc;
+      const outward=(5+cluster*7+srnd(-2,2))*sc;
       const x=e[0]+ca*(e[2]+outward),y=e[1]+sa*(e[3]+outward*.7)-view.wallH*(sa<0?1:.2);
-      const w=srnd(26,69)*sc*(cluster>.8?1.18:1), h=w*srnd(.36,.64);
-      const inlet=sa<0&&Math.abs(x-fall.x)<fall.w*1.1;
+      const w=srnd(28,48)*sc, h=w*srnd(.4,.55);
+      const inlet=(sa<0&&Math.abs(x-fall.x)<fall.w*1.1)||(Math.abs(a-3.9)<.11);
       if(!inlet) {
         // Some stretches are a low embedded slab, others a substantial piled bank.
-        stones.push({x,y,w:w*(cluster<.3?1.22:1),h:cluster<.3?h*.6:h,a,rot:srnd(-.16,.16)});
-        if(cluster>.48&&srnd(0,1)<.7) {
-          stones.push({x:x+ca*srnd(4,16)*sc+srnd(-9,9)*sc,y:y-h*srnd(.32,.6)+sa*6*sc,w:w*srnd(.48,.88),h:h*srnd(.55,.9),a,rot:srnd(-.2,.2)});
+        stones.push({x,y,w:w*(cluster<.3?1.22:1),h:cluster<.3?h*.6:h,a,rot:srnd(-.06,.06)});
+        if(cluster>.55&&Math.abs(ca)<.82&&srnd(0,1)<.55) {
+          stones.push({x:x+ca*10*sc+srnd(-3,3)*sc,y:y-h*.32+sa*8*sc,w:w*srnd(.48,.88),h:h*srnd(.55,.9),a,rot:srnd(-.08,.08)});
         }
-        if(srnd(0,1)<.38)stones.push({x:x+srnd(-.65,.65)*w,y:y+srnd(-.1,.25)*h,w:w*srnd(.2,.38),h:h*.35,a,rot:srnd(-.3,.3)});
+        if(srnd(0,1)<.38)stones.push({x:x+srnd(-.65,.65)*w,y:y+srnd(-.1,.25)*h,w:w*srnd(.2,.38),h:h*.35,a,rot:srnd(-.08,.08)});
       }
       const tangent=Math.hypot(e[2]*sa,e[3]*ca);
       a+=Math.max(.035,w*srnd(.55,.95)/Math.max(1,tangent));
     }
+    // Keep the inner shoreline continuous: no decorative slab can jut into the pool.
+    g.save();g.beginPath();g.rect(0,0,W,H);g.moveTo(e[0]+e[2]-3*sc,e[1]);g.ellipse(e[0],e[1],e[2]-3*sc,e[3]-2*sc,0,0,TAU);g.clip('evenodd');
     stones.sort((a,b)=>a.y-b.y);
     for(const st of stones) {
       g.save();g.translate(st.x,st.y);g.rotate(st.rot||0);boulder(g,0,0,st.w,st.h,0,.85);g.restore();
@@ -718,7 +722,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
         g.fillStyle='#cbbd69';g.beginPath();g.arc(x,y,.8*sc,0,TAU);g.fill();
       }
     }
-    grain(g,.035,'source-atop');return c;
+    g.restore();grain(g,.035,'source-atop');return c;
   }
   function paintForeground() {
     const [c, g] = offscreen();
@@ -1263,7 +1267,16 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     ctx.ellipse(pond.cx, pond.cy, pond.rx, pond.ry, 0, 0, TAU);
     ctx.clip();
   }
+  function paintBedArt(g) {
+    const {cx,cy,rx,ry}=pond;
+    g.drawImage(bedArt,cx-rx,cy-ry,rx*2,ry*2);
+    g.save();g.translate(cx,cy);g.scale(1,ry/rx);
+    const shade=g.createRadialGradient(-rx*.12,rx*.08,rx*.15,0,0,rx);
+    shade.addColorStop(0,'rgba(34,77,58,.08)');shade.addColorStop(.65,'rgba(27,62,44,.16)');shade.addColorStop(1,'rgba(10,34,25,.67)');
+    g.fillStyle=shade;g.fillRect(-rx,-rx,rx*2,rx*2);g.restore();
+  }
   function drawWater() {
+    if(bedReady){paintBedArt(ctx);ctx.fillStyle='rgba(18,100,71,.24)';ctx.fillRect(pond.cx-pond.rx,pond.cy-pond.ry,pond.rx*2,pond.ry*2);return;}
     const r = Math.max(pond.rx, pond.ry);
     const g = ctx.createRadialGradient(pond.cx - pond.rx * 0.2, pond.cy + pond.ry * 0.25, r * 0.05, pond.cx, pond.cy, r);
     g.addColorStop(0, '#5cbf72'); g.addColorStop(0.6, '#23804e'); g.addColorStop(1, '#0d3d27');
@@ -1371,19 +1384,14 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     ctx.restore();
   }
   function drawGlints() {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const s of glints) {
-      const b = Math.pow(Math.max(0, Math.sin(tNow * s.sp + s.ph)), 14);
-      if (b < 0.03) {
-        if (Math.random() < 0.002) { [s.x, s.y] = randWater(20); }
-        continue;
-      }
-      const [x, y] = toScreen(s.x, s.y), l = (3 + 7 * b) * S;
-      ctx.strokeStyle = `rgba(255,253,225,${b})`; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x - l, y); ctx.lineTo(x + l, y); ctx.moveTo(x, y - l * 0.6); ctx.lineTo(x, y + l * 0.6); ctx.stroke();
-      ctx.fillStyle = `rgba(255,255,235,${b})`;
-      ctx.beginPath(); ctx.arc(x, y, 1.3, 0, TAU); ctx.fill();
+    ctx.save();ctx.globalCompositeOperation='screen';
+    for(const s of glints) {
+      const b=Math.pow(Math.max(0,Math.sin(tNow*s.sp+s.ph)),8);
+      if(b<.08)continue;
+      const [x,y]=toScreen(s.x+Math.sin(tNow*.7+s.ph)*1.7*S,s.y);
+      const l=(1.3+4*b)*S;
+      ctx.strokeStyle=`rgba(250,244,199,${b*.42})`;ctx.lineWidth=(.5+.5*b)*S;
+      ctx.beginPath();ctx.moveTo(x-l,y);ctx.quadraticCurveTo(x,y-l*.18,x+l,y+.3*S);ctx.stroke();
     }
     ctx.restore();
   }
@@ -1904,8 +1912,15 @@ void main() {
   col = mix(col, refl * vec3(.8, .92, .86), fres);
   // sun glints on the slopes of the waves
   vec3 H = normalize(normalize(vec3(-.35, -.9, .5)) + vec3(0., .8, .6));
-  float spec = pow(max(dot(N, H), 0.), 260.) * 2.6;
-  col += vec3(1., .97, .85) * spec * (.35 + dap * .65);
+  vec2 micro = amb(wp * 1.7, uTime * .75) * .045;
+  vec3 lightN = normalize(vec3(-g - micro, 1.));
+  vec3 sunH = normalize(vec3(-.12, -.06, 1.));
+  float slope = max(dot(lightN, sunH), 0.);
+  float lane = exp(-pow((vUv.x - (.28 + vUv.y * .22)) / .30, 2.));
+  float fleck = smoothstep(.55, .86, noise(wp * .19 + g * 1.5 + vec2(uTime * .32, -uTime * .55)));
+  float softSun = pow(slope, 48.) * .10;
+  float spec = pow(slope, 420.) * fleck * .65;
+  col += vec3(1., .96, .77) * (softSun + spec) * lane * (.25 + dap * .75);
   // shade near the stone rim, deepest under the far wall
   col *= mix(.68, 1., smoothstep(1., .86, e));
   col *= 1. - .3 * smoothstep(.55, 1., e) * smoothstep(.1, -.7, q.y);
@@ -2088,6 +2103,7 @@ void main() {
     const g = c.getContext('2d');
     g.setTransform(fd, 0, 0, fd, -(pond.cx - pond.rx) * fd, -(pond.cy - pond.ry) * fd);
     const { cx, cy, rx, ry } = pond;
+    if(bedReady){paintBedArt(g);return c;}
     g.save(); g.translate(cx, cy); g.scale(1, ry / rx);
     let gr = g.createRadialGradient(-rx * 0.12, rx * 0.1, 0, 0, 0, rx);
     gr.addColorStop(0, '#c4b06c'); gr.addColorStop(0.5, '#a0904f'); gr.addColorStop(0.82, '#66703a'); gr.addColorStop(1, '#2c3a20');
@@ -2209,24 +2225,18 @@ void main() {
   /* ---------- F-art: a deer now and then, at the edge of the misty trees ---------- */
   const deer = { on: false, t: rnd(6, 14), x: 0, dir: 1, mode: 'walk', timer: 0, ph: 0, stopX: 0, head: 0 };
   function drawDeer(dt) {
-    const d=deer,sc=view.sc;
-    if(!deerReady) return;
-    if(!d.on) {
-      d.t-=dt;if(d.t>0)return;
-      d.on=true;d.timer=0;d.dir=Math.random()<.5?1:-1;
-      d.x=W*(d.dir>0?.19:.81);
-    }
-    d.timer+=dt;
-    if(d.timer>19){d.on=false;d.t=rnd(22,38);return;}
-    // A distant animal stands and grazes; no two-pose walking or gliding.
-    const fade=Math.min(1,d.timer/2,(19-d.timer)/2),width=49*sc;
-    const gy=pond.cy-pond.ry*view.T-42*sc;
-    const grazing=d.timer>6&&d.timer<14;
-    const [sx,sy,sw,sh]=deerRects[grazing?3:0],height=width*sh/sw;
-    ctx.save();ctx.globalAlpha=.75*fade;ctx.translate(d.x,gy);ctx.scale(d.dir,1);
-    ctx.fillStyle='rgba(24,43,26,.22)';ctx.beginPath();ctx.ellipse(0,1,16*sc,2.2*sc,0,0,TAU);ctx.fill();
-    ctx.drawImage(deerAtlas,sx,sy,sw,sh,-width/2,-height+Math.sin(tNow*1.2)*.18*sc,width,height);
+    if(!deerReady)return;
+    const sc=view.sc,a=3.9,edgeX=pond.cx+Math.cos(a)*pond.rx,edgeY=pond.cy+Math.sin(a)*pond.ry*view.T;
+    const width=52*sc,[sx,sy,sw,sh]=deerRects[3],height=width*sh/sw;
+    // Hooves stay on the bank, the lowered muzzle reaches the small open inlet.
+    const x=edgeX-width*.38,y=edgeY+3*sc;
+    ctx.save();ctx.globalAlpha=.92;
+    ctx.fillStyle='rgba(25,40,25,.25)';ctx.beginPath();ctx.ellipse(x-3*sc,y-1*sc,width*.35,2.5*sc,0,0,TAU);ctx.fill();
+    ctx.drawImage(deerAtlas,sx,sy,sw,sh,x-width*.5,y-height+Math.sin(tNow*1.7)*.22*sc,width,height);
     ctx.restore();
+    const noseX=x+width*.40,noseY=y-height*.04;
+    deer.timer-=dt;
+    if(deer.timer<=0){deer.timer=rnd(1.1,1.9);const [wx,wy]=clampWater(noseX+3*sc,toWorldY(noseY+3*sc),4*S);addRipple({x:wx,y:wy,max:10*S,a:.12,r:1*S,life:.7,n:1});}
   }
 
   let last = performance.now();
@@ -2271,10 +2281,10 @@ void main() {
       drawRipples(dt);
       drawBlossoms(dt);
       drawLotuses();
-      drawGlints();
     }
-    drawDeer(dt);
+    drawGlints();
     ctx.drawImage(rimC, 0, 0, W, H);
+    drawDeer(dt);
     drawWaterfall(dt);
     ctx.drawImage(fgC, gl ? -cam.x * 22 * view.sc * 0.6 : 0, 0, W, H);
     for (const lb of labels) drawLabel(...lb);
@@ -2377,6 +2387,7 @@ void main() {
   deerAtlas.src = new URL('assets/deer-atlas-v1.png', document.baseURI).href;
   stoneAtlas.src = new URL('assets/shore-stones-v1.png', document.baseURI).href;
   cascadeAtlas.src = new URL('assets/rock-cascade-v1.png', document.baseURI).href;
+  bedArt.src = new URL('assets/pond-bed-v1.png', document.baseURI).href;
   requestAnimationFrame(frame);
 })();
 </script>

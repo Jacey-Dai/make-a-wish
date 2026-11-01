@@ -23,3 +23,7 @@ Atlas source rectangles are specified in `index.html`; all assets load locally w
 ## v0.14 cascade
 
 `rock-cascade-v1.png` generated using built-in image_gen and the user-referenced layout study. Prompt: isolated low mossy rock ledge, visible shallow winding stream feeding an irregular short cascade, soft painted olive/gray material, coherent origin and foamy landing, true transparency, no forest or broad pond patch. Animated highlights are clipped to the water region; the existing wave system receives subtle landing ripples.
+
+## v0.15 pond bed
+
+`pond-bed-v1.png`, built-in image_gen. Prompt: top-down painterly pond-bed material, warm sage sand/silt, small irregular warm-gray and olive stones clustered toward edges, quiet center for readable fish, sparse aquatic tufts and muted fallen leaves. No water, reflections, caustics, fish or UI. Refracted and shaded by the live shader; also used in 2D fallback.
