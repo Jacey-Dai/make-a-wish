@@ -601,7 +601,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     if (!forestPlateReady) ruins(g, pond.cx, ly, fall.w * 1.7, span, 0.16);
     const pile = [];
     // rubble along the foot of the wall
-    for (let x = pond.cx - span; x <= pond.cx + span; x += srnd(14, 30) * sc) pile.push({ x, y: ly + srnd(8, 16) * sc, w: srnd(22, 42) * sc });
+    if (!forestPlateReady) for (let x = pond.cx - span; x <= pond.cx + span; x += srnd(14, 30) * sc) pile.push({ x, y: ly + srnd(8, 16) * sc, w: srnd(22, 42) * sc });
     for (let i = 0; i < 36; i++) {
       const t = Math.pow(srnd(0, 1), 1.3), y = ly + 8 * sc + (wTop - ly - 8 * sc) * t;
       const spread = ow * (0.35 + t * 0.4);
