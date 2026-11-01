@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.10 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.11 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -277,6 +277,17 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     const g = c.getContext('2d'); g.setTransform(DPR, 0, 0, DPR, M * DPR, 0);
     return [c, g];
   }
+  /* ---------- F9 painterly forest environment plate ---------- */
+  const forestPlate = new Image();
+  let forestPlateReady = false;
+  // Loading once before rebuilding preserves both rendering paths and resize behavior.
+  forestPlate.onload = () => { forestPlateReady = true; layout(); };
+  function paintForestPlate(g) {
+    // Preserve the complete clearing and its framing at every aspect ratio.
+    // One continuous plate avoids seams between the woodland and ground.
+    g.drawImage(forestPlate, 0, 0, W, H);
+  }
+
   /* ---------- F9 forest enclosure and layered understory ---------- */
   function leafSpray(g, x, y, radius, fog = 0, shade = 1) {
     // Volumes have a shaded interior and small leaves catching light above.
@@ -577,11 +588,17 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       leafSpray(g, v.x, v.y - v.r * .18, v.r, .12, .85);
       if (srnd(0, 1) > .45) fern(g, v.x, v.y, v.r * 1.35, srnd(-2.3, -.8), [78, 119, 51], .08);
     }
+    if (forestPlateReady) {
+      // An opaque environment plate replaces the geometric forest and uniform lawn.
+      // Keep the existing pond, bank stones, waterfall, and water simulation below.
+      paintForestPlate(g);
+      layers = [];
+    }
     // mossy rock pile behind the pond; the waterfall pours out of the arch on top of it
     const ow = Math.max(150, Math.min(340, W * 0.3)), ly = Math.max(top * 0.72, wTop - Math.max(100, H * 0.13));
     fall.x = pond.cx; fall.w = Math.max(34, ow * 0.2); fall.y1 = ly + 4 * sc; fall.y2 = wTop + 6 * sc;
     const span = Math.min(W * 0.42, ow * (portrait ? 0.85 : 1.05));
-    ruins(g, pond.cx, ly, fall.w * 1.7, span, 0.16);
+    if (!forestPlateReady) ruins(g, pond.cx, ly, fall.w * 1.7, span, 0.16);
     const pile = [];
     // rubble along the foot of the wall
     for (let x = pond.cx - span; x <= pond.cx + span; x += srnd(14, 30) * sc) pile.push({ x, y: ly + srnd(8, 16) * sc, w: srnd(22, 42) * sc });
@@ -609,7 +626,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     grain(pg, 0.14, 'source-atop');
     blurInto(g, pc, 0.6 * sc);
     // a broken column or two in the clearing, where the screen has room
-    if (!portrait && W > 900) for (const f of [0.1, 0.9]) column(g, W * f, top + 46 * sc, 22 * sc, 110 * sc, 0.05);
+    if (!forestPlateReady && !portrait && W > 900) for (const f of [0.1, 0.9]) column(g, W * f, top + 46 * sc, 22 * sc, 110 * sc, 0.05);
     ell(g, R.basin);
     gr = g.createLinearGradient(0, R.basin[1] - R.basin[3], 0, R.basin[1]);
     gr.addColorStop(0, '#3a4630'); gr.addColorStop(1, '#16261a');
@@ -696,8 +713,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       }
       for (let i = 0; i < 4; i++) fern(lg, x0 + dir * srnd(0, w * 0.5), H - srnd(0, h * 0.6), srnd(60, 110) * sc, dir > 0 ? srnd(-2, -0.9) : srnd(-2.2, -1.1), [62, 112, 40]);
     };
-    pileAt(0, 1); pileAt(W, -1);
-    forestFraming(lg);
+    if (!forestPlateReady) { pileAt(0, 1); pileAt(W, -1); forestFraming(lg); }
     // near the lens and out of the sun
     lg.save(); lg.globalCompositeOperation = 'source-atop';
     lg.fillStyle = 'rgba(14,30,12,0.42)'; lg.fillRect(0, 0, W, H);
@@ -2276,6 +2292,7 @@ void main() {
   window.addEventListener('resize', layout);
   initGL();
   layout();
+  forestPlate.src = new URL('assets/forest-sanctuary-v1.png', document.baseURI).href;
   requestAnimationFrame(frame);
 })();
 </script>
