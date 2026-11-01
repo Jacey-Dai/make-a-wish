@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 许愿池 v0.4 · see docs/PRD.md and AGENTS.md -->
+<!-- 许愿池 v0.5 · see docs/PRD.md and AGENTS.md -->
 <title>许愿池</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -208,75 +208,90 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
   function paintBackground() {
     const [c, g] = offscreen();
     const top = view.top, sc = view.sc, R = rings();
-    const wt = top * 0.42;
-    // canopy haze
-    let gr = g.createLinearGradient(0, 0, 0, top);
-    gr.addColorStop(0, '#eef3cf'); gr.addColorStop(0.3, '#b3d08a'); gr.addColorStop(1, '#3d6134');
-    g.fillStyle = gr; g.fillRect(0, 0, W, top + 2);
-    for (let i = 0; i < 9; i++) {
-      g.fillStyle = 'rgba(58,66,44,0.4)';
-      const x = srnd(0, W), w = srnd(5, 15) * sc;
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w * 1.4, wt + 10); g.lineTo(x - w * 0.4, wt + 10); g.fill();
-    }
-    const layers = [['#a8cd84', '#c8e3a4', 0.55], ['#679a4b', '#8cbd63', 0.42], ['#3a6530', '#51843f', 0.3]];
-    for (const [base, hi, yMax] of layers) {
-      const n = Math.ceil(W / 22);
-      for (let i = 0; i < n; i++) {
-        const x = srnd(-40, W + 40), y = srnd(-40, top * yMax), r = srnd(26, 64) * sc;
-        g.fillStyle = base; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-        g.globalAlpha = 0.7; g.fillStyle = hi;
-        g.beginPath(); g.arc(x - r * 0.25, y - r * 0.3, r * 0.55, 0, TAU); g.fill();
-        g.globalAlpha = 1;
+    /* ---------- F9 secluded forest: distant air, ruins, understory ---------- */
+    let gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#b9cba0'); gr.addColorStop(0.36, '#536e48'); gr.addColorStop(1, '#213c2c');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    // Smaller, paler trunks recede behind the clearing.
+    for (let layer = 0; layer < 3; layer++) {
+      const ground = top * (0.78 + layer * 0.19);
+      for (let i = 0; i < 24; i++) {
+        const x = srnd(-30, W + 30), width = srnd(3, 8) * sc * (layer + 1);
+        g.strokeStyle = ['#8fa381', '#607b60', '#3c5943'][layer];
+        g.lineWidth = width; g.beginPath(); g.moveTo(x, ground);
+        g.bezierCurveTo(x + width, ground * 0.6, x - width * 2, ground * 0.3, x + width, -20); g.stroke();
+        g.lineWidth = width * 0.35; g.beginPath(); g.moveTo(x, ground * 0.5);
+        g.lineTo(x + srnd(-65, 65) * sc, ground * 0.12); g.stroke();
+      }
+      for (let i = 0; i < 100; i++) {
+        const x = srnd(-30, W + 30), y = srnd(-30, top * 0.48), r = srnd(8, 32) * sc;
+        g.fillStyle = ['#9eb688', '#769763', '#456a46'][layer];
+        g.beginPath(); g.ellipse(x, y, r * 1.5, r, srnd(-1, 1), 0, TAU); g.fill();
       }
     }
-    // ruin wall
-    gr = g.createLinearGradient(0, wt, 0, top);
-    gr.addColorStop(0, '#b0a78f'); gr.addColorStop(1, '#6a6353');
-    g.fillStyle = gr; g.fillRect(0, wt, W, top - wt);
-    const rowH = 15 * sc;
-    g.strokeStyle = 'rgba(45,40,30,0.28)'; g.lineWidth = 1;
-    for (let y = wt, r = 0; y < top; y += rowH, r++) {
-      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
-      for (let x = (r % 2) * 17 * sc; x < W; x += 34 * sc) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + rowH); g.stroke(); }
-    }
-    for (let i = 0; i < W / 30; i++) {
-      g.fillStyle = 'rgba(70,105,50,0.22)';
-      g.beginPath(); g.ellipse(srnd(0, W), srnd(wt, top), srnd(10, 40) * sc, srnd(4, 14) * sc, 0, 0, TAU); g.fill();
-    }
-    const np = Math.max(3, Math.round(W / 240));
-    for (let i = 0; i < np; i++) {
-      const px = (i + 0.5) / np * W, pw = 28 * sc;
-      gr = g.createLinearGradient(px - pw / 2, 0, px + pw / 2, 0);
-      gr.addColorStop(0, '#e2dbc5'); gr.addColorStop(1, '#948b75');
-      g.fillStyle = gr; g.fillRect(px - pw / 2, wt - 22 * sc, pw, top - wt + 22 * sc);
-      g.fillStyle = '#e6dfca'; g.fillRect(px - pw * 0.7, wt - 30 * sc, pw * 1.4, 9 * sc);
-      g.fillStyle = '#d6cfb8';
-      g.beginPath(); g.moveTo(px - pw * 0.45, wt - 30 * sc); g.lineTo(px, wt - 58 * sc); g.lineTo(px + pw * 0.45, wt - 30 * sc); g.fill();
-    }
-    // ivy curtains
-    const ivy = ['#2c5627', '#3b6c31', '#4e873c', '#69a14b'];
-    const strands = Math.ceil(W / 7);
-    for (let i = 0; i < strands; i++) {
-      const x0 = srnd(0, W), len = srnd(0.2, 1) * (top - wt + 30 * sc), ph = srnd(0, TAU);
-      for (let t = 0; t < len; t += 4 * sc) {
-        if (srnd(0, 1) < t / len * 0.6) continue;
-        g.fillStyle = ivy[Math.floor(srnd(0, 4))];
-        g.beginPath();
-        g.ellipse(x0 + Math.sin(t * 0.04 + ph) * 5 * sc + srnd(-4, 4) * sc, wt - 26 * sc + t, srnd(3, 7) * sc, srnd(2, 4.5) * sc, srnd(0, TAU), 0, TAU);
-        g.fill();
+    const glow = g.createRadialGradient(W * 0.60, top * 0.35, 0, W * 0.60, top * 0.35, top * 0.9);
+    glow.addColorStop(0, 'rgba(244,246,207,.65)'); glow.addColorStop(1, 'rgba(226,239,195,0)');
+    g.fillStyle = glow; g.fillRect(0, 0, W, top * 1.5);
+    // Broken wall follows the clearing instead of forming a horizontal backdrop.
+    const wallBottom = top * 1.12;
+    const archX = W * 0.68, archW = Math.min(W * 0.17, 125 * sc), archTop = top * 0.38;
+    const arch = (x, y, w, base) => {
+      g.beginPath(); g.moveTo(x - w / 2, base); g.lineTo(x - w / 2, y + w / 2);
+      g.arc(x, y + w / 2, w / 2, Math.PI, TAU); g.lineTo(x + w / 2, base); g.closePath();
+    };
+    g.save();
+    g.beginPath(); g.moveTo(-10, top * 0.34);
+    for (let x = 0; x <= W + 40; x += 38 * sc) g.lineTo(x, top * (0.33 + 0.15 * Math.sin(x / W * 8)) + srnd(-9, 9) * sc);
+    g.lineTo(W + 10, wallBottom); g.lineTo(-10, wallBottom); g.closePath(); g.clip();
+    g.beginPath(); g.rect(-10, -10, W + 20, H + 20);
+    arch(archX, archTop, archW, wallBottom + 1); g.clip('evenodd');
+    // Use a cut-out below after painting the masonry.
+    gr = g.createLinearGradient(0, 0, W, top);
+    gr.addColorStop(0, '#475849'); gr.addColorStop(0.6, '#8d9275'); gr.addColorStop(1, '#53644e');
+    g.fillStyle = gr; g.fillRect(0, 0, W, wallBottom);
+    g.restore();
+    // Individual weathered blocks leave an actual open arch into the forest.
+    g.save();
+    g.beginPath(); g.rect(-10, -10, W + 20, wallBottom + 10); arch(archX, archTop, archW, wallBottom + 1); g.clip('evenodd');
+    const bh = 24 * sc;
+    for (let row = 0, y = top * 0.42; y < wallBottom; y += bh, row++) {
+      for (let x = -45 * sc + (row % 2) * 30 * sc; x < W; x += 62 * sc) {
+        const v = srnd(-9, 9);
+        g.fillStyle = `rgb(${104+v},${116+v},${91+v})`;
+        g.beginPath(); g.roundRect(x + 1, y + 1, 59 * sc, bh - 2, 3 * sc); g.fill();
+        g.strokeStyle = 'rgba(215,217,177,.15)'; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(x + 3, y + 2); g.lineTo(x + 55 * sc, y + 2); g.stroke();
       }
     }
-    // lawn
-    gr = g.createLinearGradient(0, top, 0, H);
-    gr.addColorStop(0, '#4a7535'); gr.addColorStop(1, '#2f4f25');
-    g.fillStyle = gr; g.fillRect(0, top, W, H - top);
-    gr = g.createLinearGradient(0, top, 0, top + 30 * sc);
-    gr.addColorStop(0, 'rgba(10,20,8,0.45)'); gr.addColorStop(1, 'rgba(10,20,8,0)');
-    g.fillStyle = gr; g.fillRect(0, top, W, 30 * sc);
-    for (let i = 0; i < W * H / 900; i++) {
-      const x = srnd(0, W), y = srnd(top, H);
-      g.strokeStyle = srnd(0, 1) < 0.5 ? 'rgba(140,190,90,0.35)' : 'rgba(20,45,15,0.35)';
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + srnd(-2, 2), y - srnd(3, 7) * sc); g.stroke();
+    g.restore();
+    arch(archX, archTop - 4 * sc, archW + 13 * sc, wallBottom);
+    g.strokeStyle = '#a2aa87'; g.lineWidth = 9 * sc; g.stroke();
+    arch(archX, archTop, archW, wallBottom);
+    g.strokeStyle = '#425640'; g.lineWidth = 3 * sc; g.stroke();
+    // Ivy is clustered, leaving quiet stone surfaces between the curtains.
+    for (let i = 0; i < 58; i++) {
+      const x = srnd(0, W), y0 = top * srnd(0.29, 0.52), len = srnd(20, top * 0.67);
+      if (Math.abs(x - archX) < archW * 0.65) continue;
+      g.strokeStyle = '#405f37'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x - 10 * sc, y0 + len / 2, x + 5 * sc, y0 + len); g.stroke();
+      for (let y = 0; y < len; y += 7 * sc) {
+        g.fillStyle = ['#335333', '#517442', '#769653'][Math.floor(srnd(0, 3))];
+        g.beginPath(); g.ellipse(x + Math.sin(y * .07) * 7 * sc, y0 + y, srnd(3, 7) * sc, 3 * sc, srnd(-1, 1), 0, TAU); g.fill();
+      }
+    }
+    // Uneven forest floor and low banks, darkest at the edges.
+    gr = g.createRadialGradient(W * .52, H * .58, 0, W * .52, H * .58, W * .7);
+    gr.addColorStop(0, '#66804c'); gr.addColorStop(.6, '#344f33'); gr.addColorStop(1, '#1c3529');
+    g.fillStyle = gr;
+    g.beginPath(); g.moveTo(0, top); g.quadraticCurveTo(W * .5, top * 1.4, W, top * .98);
+    g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
+    for (let i = 0; i < 680; i++) {
+      const x = srnd(0, W), y = srnd(top * 1.15, H);
+      const dx = (x - pond.cx) / (R.path[2] + 10), dy = (y - R.path[1]) / (R.path[3] + 12);
+      if (dx * dx + dy * dy < 1) continue;
+      const r = srnd(2, 10) * sc * (.5 + y / H);
+      g.fillStyle = ['#2a4832', '#3b5d38', '#587844', '#789052'][Math.floor(srnd(0, 4))];
+      g.beginPath(); g.ellipse(x, y, r * 1.8, r * .6, srnd(-1, 1), 0, TAU); g.fill();
     }
     // paved path ring
     ell(g, R.path); g.fillStyle = '#867d68'; g.fill();
@@ -408,6 +423,28 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
       g.restore();
     };
     rock(0, 1); rock(W, -1);
+    /* ---------- F9 foreground trees frame the clearing ---------- */
+    for (const side of [-1, 1]) {
+      g.save(); g.translate(side < 0 ? 0 : W, 0); g.scale(-side, 1);
+      const tw = Math.min(W * .075, 74 * sc), base = H * .74;
+      let bark = g.createLinearGradient(0, 0, tw, 0);
+      bark.addColorStop(0, '#182d24'); bark.addColorStop(.65, '#354537'); bark.addColorStop(1, '#62654a');
+      g.fillStyle = bark; g.beginPath(); g.moveTo(-20, base + 30 * sc);
+      g.quadraticCurveTo(tw * 1.4, base - 12 * sc, tw * .7, H * .34);
+      g.lineTo(tw * 1.5, -20); g.lineTo(-20, -20); g.closePath(); g.fill();
+      g.strokeStyle = '#293c2c'; g.lineWidth = 18 * sc;
+      g.beginPath(); g.moveTo(tw * .65, H * .20);
+      g.bezierCurveTo(W * .12, H * .05, W * .18, H * .12, W * .28, -15); g.stroke();
+      for (let i = 0; i < 115; i++) {
+        const x = srnd(-20, W * .30), y = srnd(-30, H * .19);
+        if (y > H * (.20 - x / W * .48)) continue;
+        const r = srnd(7, 21) * sc;
+        g.fillStyle = ['#1b3529', '#294b32', '#3b6039', '#647f45'][Math.floor(srnd(0, 4))];
+        g.beginPath(); g.ellipse(x, y, r * 1.6, r * .58, srnd(-1, 1), 0, TAU); g.fill();
+      }
+      g.restore();
+    }
+
     let gr = g.createRadialGradient(W / 2, H * 0.58, Math.min(W, H) * 0.42, W / 2, H * 0.58, Math.max(W, H) * 0.85);
     gr.addColorStop(0, 'rgba(6,16,8,0)'); gr.addColorStop(1, 'rgba(6,16,8,0.55)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
