@@ -662,10 +662,12 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     blurInto(g, pc, 0.6 * sc);
     // a broken column or two in the clearing, where the screen has room
     if (!forestPlateReady && !portrait && W > 900) for (const f of [0.1, 0.9]) column(g, W * f, top + 46 * sc, 22 * sc, 110 * sc, 0.05);
+    if(!forestPlateReady) {
     ell(g, R.basin);
     gr = g.createLinearGradient(0, R.basin[1] - R.basin[3], 0, R.basin[1]);
     gr.addColorStop(0, '#3a4630'); gr.addColorStop(1, '#16261a');
     g.fillStyle = gr; g.fill();
+    }
     layers.push({ c, depth: 0, h: H, full: true });
     // flat composite
     const [bc, bg] = offscreen();
@@ -693,7 +695,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     g.beginPath();
     for(let i=0;i<=100;i++){const a=i/100*TAU,d=(11+4*Math.sin(a*5+.8)+2*Math.sin(a*11))*sc,[x,y]=point(a,d);i?g.lineTo(x,y):g.moveTo(x,y);}
     for(let i=100;i>=0;i--){const a=i/100*TAU,[x,y]=point(a,-2*sc);g.lineTo(x,y);}g.closePath();
-    g.fillStyle='#656848';g.fill();
+    // The forest floor is the footing; do not paint a continuous artificial rim.
     const groups=[];
     // Distinct groups are separated by embedded slabs and moss, rather than one equal course.
     for(const [a,size] of [[.18,.8],[.82,1],[1.5,.75],[2.23,1.1],[2.92,.8],[3.48,.9],[4.15,.8],[4.65,.6],[5.17,1],[5.78,.85]]) {
@@ -1461,12 +1463,12 @@ body { background: var(--ground); color: var(--ink); font-family: var(--f-body);
     const depth=ctx.createLinearGradient(0,lip,0,base);
     depth.addColorStop(0,'rgba(9,24,21,.48)');depth.addColorStop(.2,'rgba(27,78,69,.2)');depth.addColorStop(1,'rgba(179,214,199,.16)');
     ctx.fillStyle=depth;ctx.fillRect(cx-hw*1.5,lip,hw*3,base-lip);
-    for(let i=0;i<26;i++) {
-      const u=i/25,phase=i*2.37,spread=(u-.5)*hw*1.75;
-      const bend=Math.sin(phase)*2.6*sc;
+    for(let i=0;i<17;i++) {
+      const u=i/16,phase=i*2.37,spread=(u-.5)*hw*1.65+Math.sin(phase)*1.5*sc;
+      const bend=(Math.sin(phase)*2.6+Math.sin(tNow*1.4+phase)*1.5)*sc;
       const grad=ctx.createLinearGradient(0,lip,0,base);
       grad.addColorStop(0,'rgba(178,222,202,.4)');grad.addColorStop(.18,'rgba(238,250,235,.55)');grad.addColorStop(.66,'rgba(197,232,222,.28)');grad.addColorStop(1,'rgba(238,250,240,.7)');
-      ctx.strokeStyle=grad;ctx.lineWidth=(.8+(i%4)*.5)*sc;
+      ctx.strokeStyle=grad;ctx.lineWidth=(.65+(i%5)*.48)*(1+.17*Math.sin(tNow*2+phase))*sc;
       ctx.beginPath();ctx.moveTo(cx+spread,lip);
       ctx.bezierCurveTo(cx+spread+bend,lip+(base-lip)*.2,cx+spread*1.12+bend,base-12*sc,cx+spread*1.12+2*sc,base);ctx.stroke();
       // Accelerating packets of white water travel down the curved strands.
